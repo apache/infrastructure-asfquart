@@ -4,3 +4,6 @@ dist/
 
 # IDEs
 .idea/
+
+# Caches
+__pycache__
