@@ -1,0 +1,6 @@
+# Build artifacts
+*.egg-info
+dist/
+
+# IDEs
+.idea/
