@@ -4,8 +4,9 @@ import pytest
 from src import asfquart
 import signal
 import asyncio
+import pathlib
 
-TEST_CONFIG_FILENAME = "data/config.test.yaml"
+TEST_CONFIG_FILENAME = pathlib.Path(__file__).parent / "data/config.test.yaml"
 times_loaded = 0
 
 
