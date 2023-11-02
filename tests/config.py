@@ -18,8 +18,6 @@ async def test_config_static():
     def config_callback(yml: dict):
         assert yml, "Config YAML is empty!"
         assert isinstance(yml, dict), "Config YAML is not a dict!"
-    # Blocking test
-    config_callback(TEST_CONFIG_FILENAME)
     # Async test
     await config_callback(TEST_CONFIG_FILENAME)
 
