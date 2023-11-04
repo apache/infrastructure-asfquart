@@ -3,10 +3,11 @@
 import signal
 import asyncio
 import yaml
-from . import base
 import functools
 import inspect
 import os
+
+from . import base
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 
