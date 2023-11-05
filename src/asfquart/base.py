@@ -8,6 +8,7 @@ import pathlib
 import secrets
 import os
 import sys
+import quart
 
 import __main__
 
@@ -16,10 +17,6 @@ loop = asyncio.get_event_loop()
 
 # Locate the app dir as best we can. This is used for app ID and token filepath generation
 APP_DIR = pathlib.Path(__main__.__file__).parent
-
-# Unique App ID for this file path on this hostname.
-# Used to distinguish two separate asfquart apps running on the same hostname
-COOKIE_ID = hashlib.sha224(bytes(APP_DIR)).hexdigest()[:16]
 
 # Read, or set and write, the application secret token for session encryption.
 # We prefer permanence for the session encryption, but will fall back to a new secret if we
@@ -38,3 +35,33 @@ else:  # No token file yet, try to write, warn if we cannot
         sys.stderr.write(
             f"ASFQuart: Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
         )
+
+
+class QuartApp(quart.Quart):
+    """Sub-class of quart.Quart with an additional init function for handling session identifiers and secrets"""
+    def __init__(self):
+        super().__init__(__name__)
+        self._app_id = None
+
+        @self.before_serving
+        async def validate_app_id():
+            if not self._app_id:
+                raise ValueError("App ID has not been set! Call asfquart.init(name) prior to running the app.")
+
+    @property
+    def app_id(self):
+        if not self._app_id:
+            raise ValueError("No App ID set yet!")
+        return self._app_id
+
+    def init(self, name: str):
+        """Sets up the name of the quart app and its session secrets"""
+        assert name, "The Quart app must have a non-empty name set!"
+        self._app_id = name
+        self.secret_key = APP_SECRET
+
+
+if hasattr(__main__, "__file__"):
+    APP = QuartApp()
+else:
+    APP = None
