@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import sys
-sys.path.append(".")
+sys.path.extend(('src', '../src',))  # Depending on where unit tests are run from, path may differ
 
 import pytest
-from src import asfquart
+import asfquart
 import signal
 import asyncio
 import pathlib
