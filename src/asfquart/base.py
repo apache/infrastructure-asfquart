@@ -23,12 +23,13 @@ import asyncio
 import pathlib
 import secrets
 import os
-import sys
+import logging
 
 import quart
 
 import __main__
 
+LOGGER = logging.getLogger(__name__)
 
 loop = asyncio.get_event_loop()
 
@@ -61,8 +62,8 @@ class QuartApp(quart.Quart):
                 with open(_token_filename, "w") as f:
                     f.write(self.secret_key)
             except PermissionError:
-                sys.stderr.write(
-                    f"ASFQuart: Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
+                LOGGER.error(
+                    f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
                 )
 
 
