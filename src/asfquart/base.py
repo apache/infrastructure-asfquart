@@ -39,13 +39,14 @@ class QuartApp(quart.Quart):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-
+        assert len(args) > 0, "You need to specify a name for this quart app"
         # Locate the app dir as best we can. This is used for app ID
         # and token filepath generation
         ### is __main__ module good, and is the __file__ attribute
         ### always present? Do we need some fixes here. Should the
         ### construct() function pass the app_dir?
         self.app_dir = pathlib.Path(__main__.__file__).parent
+        self.app_id = args[0]
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
