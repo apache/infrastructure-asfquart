@@ -7,4 +7,4 @@ from . import config, base, session
 APP = None
 
 # Lift the construction from base to the package level.
-construct = base.consruct
+construct = base.construct
