@@ -50,7 +50,7 @@ class QuartApp(quart.Quart):
         # session encryption. We prefer permanence for the session
         # encryption, but will fall back to a new secret if we
         # cannot write a permanent token to disk...with a warning!
-        _token_filename = APP_DIR / "apptoken.txt"
+        _token_filename = self.app_dir / "apptoken.txt"
         if os.path.isfile(_token_filename):  # Token file exists, try to read it
             self.secret_key = open(_token_filename).read()
         else:  # No token file yet, try to write, warn if we cannot
