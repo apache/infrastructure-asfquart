@@ -1,13 +1,30 @@
 #!/usr/bin/env python3
 
-"""ASFQuart - Base loop module"""
+"""ASFQuart - Base application/event-loop module.
+
+USAGE:
+
+  main.py:
+    import asfquart
+    APP = asfquart.construct('selfserve')
+
+  anywhere else:
+    import asfquart
+    APP = asfquart.APP
+
+
+Quart.app defines a "name" property which can be used as an APP "ID"
+(eg. discriminator for cookies). While most Quart apps use the module
+name for this (and internally Quart calls this .import_name), it can
+be anything and the .name property treats it as arbitrary.
+"""
 
 import asyncio
-import hashlib
 import pathlib
 import secrets
 import os
 import sys
+
 import quart
 
 import __main__
@@ -19,13 +36,14 @@ loop = asyncio.get_event_loop()
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
-    def __init__(self):
-        super().__init__(__name__)
-        self._app_id = None
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
 
         # Locate the app dir as best we can. This is used for app ID
         # and token filepath generation
-        ### is the __file__ attribute always present?
+        ### is __main__ module good, and is the __file__ attribute
+        ### always present? Do we need some fixes here. Should the
+        ### construct() function pass the app_dir?
         self.app_dir = pathlib.Path(__main__.__file__).parent
 
         # Read, or set and write, the application secret token for
@@ -47,24 +65,13 @@ class QuartApp(quart.Quart):
                     f"ASFQuart: Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
                 )
 
-        @self.before_serving
-        async def validate_app_id():
-            if not self._app_id:
-                raise ValueError("App ID has not been set! Call asfquart.init(name) prior to running the app.")
 
-    @property
-    def app_id(self):
-        if not self._app_id:
-            raise ValueError("No App ID set yet!")
-        return self._app_id
+def construct(name, *args, **kw):
+    ### add/alter/update ARGS and KW for our specific preferences
 
-    def init(self, name: str):
-        """Sets up the name of the quart app and its session secrets"""
-        assert name, "The Quart app must have a non-empty name set!"
-        self._app_id = name
+    global APP
+    APP = QuartApp(name, *args, **kw)
 
-
-if hasattr(__main__, "__file__"):
-    APP = QuartApp()
-else:
-    APP = None
+    # Now stash this into the package module, for later pick-up.
+    import asfquart
+    asfquart.APP = APP
