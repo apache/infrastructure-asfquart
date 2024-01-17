@@ -75,6 +75,10 @@ async def test_role_auth():
     async def test_member_auth():
         pass
 
+    @asfquart.auth.role_required(all_of=[asfquart.auth.roles.member, asfquart.auth.roles.chair])
+    async def test_member_and_chair_auth():
+        pass
+
     # Test role with no session, should fail exactly like auth_required
     quart.session = {}
     try:
@@ -92,3 +96,13 @@ async def test_role_auth():
     except asfquart.auth.AuthenticationFailed as e:
         assert e.message == "This endpoint requires an organizational role your account does not have."
 
+    # Test with for both member and chair, while only being member. should fail
+    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
+    try:
+        await test_member_and_chair_auth()
+    except asfquart.auth.AuthenticationFailed as e:
+        assert e.message == "This endpoint requires an organizational role your account does not have."
+
+    # Test with for both member and chair, when we are both. should work.
+    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
+    await test_member_and_chair_auth()
