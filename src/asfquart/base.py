@@ -34,6 +34,14 @@ LOGGER = logging.getLogger(__name__)
 loop = asyncio.get_event_loop()
 
 
+class ASFQuartException(Exception):
+    """Global ASFQuart exception with a message and an error code, for the HTTP response."""
+    def __init__(self, message: str = "An error occurred", errorcode: int = 500):
+        self.message = message
+        self.errorcode = errorcode
+        super().__init__(self.message)
+
+
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
