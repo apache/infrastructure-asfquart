@@ -4,19 +4,35 @@ from . import base, session
 import functools
 import enum
 import typing
+import asyncio
 
 
-class roles(enum.Enum):
-    """ "various pre-defined access roles"""
+class ErrorMessages:
+    NOT_LOGGED_IN = "You need to be logged in to access this endpoint."
+    NOT_MEMBER = "This endpoint is only accessible to foundation members."
+    NOT_CHAIR = "This endpoint is only accessible to project chairs."
+    NO_MFA = "This endpoint requires you to log on using multi-factor authentication."
 
-    committer = 1
-    member = 2
-    chair = 3
-    director = 4
-    secretary = 5
-    infrastructure = 6
-    root = 7
-    security = 8
+
+class Requirements:
+    """ "various pre-defined access requirements"""
+
+    @staticmethod
+    def mfa_enabled(client_session):
+        """Tests for MFA enabled in the client session"""
+        return isinstance(client_session, dict) and client_session.get("mfa") is True, ErrorMessages.NO_MFA
+
+    @staticmethod
+    def committer(client_session):
+        return isinstance(client_session, dict), ErrorMessages.NOT_LOGGED_IN
+
+    @staticmethod
+    def member(client_session):
+        return client_session.get("isMember") is True, ErrorMessages.NOT_MEMBER
+
+    @staticmethod
+    def chair(client_session):
+        return client_session.get("isChair") is True, ErrorMessages.NOT_CHAIR
 
 
 class AuthenticationFailed(base.ASFQuartException):
@@ -26,89 +42,94 @@ class AuthenticationFailed(base.ASFQuartException):
         super().__init__(self.message, self.errorcode)
 
 
-def auth_required(func):
-    """Denotes that authentication is required for this resource. Authentication may be OAuth, token, or LDAP
-    based credentials unless further limited in scope by other asfquart.auth decorators."""
-
-    @functools.wraps(func)
-    async def auth_wrapper(*args, **kwargs):
-        # We need a session dict of any kind
-        client_session = session.read()
-        if not client_session or not isinstance(client_session, dict):
-            raise AuthenticationFailed("You must authenticate yourself before you can access this endpoint.")
-        if args or kwargs:
-            if args:
-                await func(*args, **kwargs)
-            else:
-                await func(**kwargs)
-        else:
-            await func()
-
-    return auth_wrapper
+def to_set(args: typing.Any):
+    """Converts any auth args (single arg, list, tuple) to a set"""
+    # A single test
+    if callable(args):
+        return {args}
+    # Nothing at all, empty set
+    elif args is None:
+        return set()
+    # A list or tuple, set-ify
+    return set(args)
 
 
-def mfa_required(func):
-    """Denotes that multi-factor authentication is required. This implies only OIDC sessions are allowed."""
-
-    @functools.wraps(func)
-    @auth_required
-    async def auth_wrapper():
-        # We need a session dict from an oauth session. @auth_required already tests for a dict, so skip that.
-        client_session = session.read()
-        if client_session.get("mfa") is not True:
-            raise AuthenticationFailed(
-                "This endpoint can only be accessed through a multi-factor authenticated session."
-            )
-        await func()
-
-    return auth_wrapper
-
-
-def check_role(client_session: dict, role: int):
-    """Match a role with a session"""
-    # TODO: Check for other roles, secretary, director, infra, security
-    if role == roles.committer and client_session:
-        return True
-    elif role == roles.member and client_session.get("isMember") is True:
-        return True
-    elif role == roles.chair and client_session.get("isChair") is True:
-        return True
-    elif role == roles.root and client_session.get("isRoot") is True:
-        return True
-    return False
-
-
-def role_required(all_of: typing.Optional[typing.Union[int, typing.List, typing.Tuple]] = roles.committer,
-        any_of: typing.Optional[typing.Union[int, typing.List, typing.Tuple]] = None
+def require(
+    func: typing.Optional[typing.Callable] = None,
+    all_of: typing.Optional[typing.Union[typing.Callable, typing.List, typing.Tuple, typing.Set]] = None,
+    any_of: typing.Optional[typing.Union[typing.Callable, typing.List, typing.Tuple, typing.Set]] = None,
 ):
-    """Denotes that a specific organizational role is required to access this endpoint.
-    Advanced requirements may be constructed using the all_of and any_of arguments, listing one or more roles that
-    will need to be required for access.
+    """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
+    of requirements. By default, all requirements must be satisfied, though this can be made optional by
+    explicitly using the `all_of` or `any_of` keywords to specify optionality. Requirements must be part
+    of the asfquart.auth.requirements class, which consists of the following test:
 
-    Current roles are as follows, and should be accessed via the asfquart.auth.roles enum:
-     - committer
-     - member
-     - chair
-     - director
-     - secretary
-     - infrastructure
-     - root
-     - security """
-    def role_required_inner(func):
-        @auth_required
-        @functools.wraps(func)
-        async def role_wrapper(all_of, any_of):
-            # Convert to lists if needed, so we can iterate
-            if isinstance(all_of, enum.Enum):
-                all_of = [all_of]
-            if isinstance(any_of, enum.Enum):
-                any_of = [any_of]
+    - mfa_enabled: The client must authenticate with a method that has MFA enabled
+    - committer: The client must be a committer
+    - member: The client must be a foundation member
+    - chair: The client must be a chair of a project
 
-            client_session = session.read()
-            if all_of and not all(check_role(client_session, role) for role in all_of):
-                raise AuthenticationFailed("This endpoint requires an organizational role your account does not have.")
-            if any_of and not any(check_role(client_session, role) for role in any_of):
-                raise AuthenticationFailed("This endpoint requires an organizational role your account does not have.")
-            await func()
-        return functools.partial(role_wrapper, all_of=all_of, any_of=any_of)
-    return role_required_inner
+    In addition, any endpoint decorated with @require will implicitly require ANY form of
+    authenticated session. This is mandatory and also works as a bare decorator.
+
+    Examples:
+        @require(Requirements.member)  # Require session, require ASF member
+        @require  # Require any authed session
+        @require({Requirements.mfa_enabled, Requirements.chair})  # Require any project chair with MFA-enabled session
+        @require(all_of=Requirements.mfa_enabled, any_of={Requirements.member, Requirements.chair})
+          # Require either ASF member OR project chair, but also require MFA enabled in any case.
+    """
+
+    async def require_wrapper(func: typing.Callable, all_of=None, any_of=None):
+        client_session = session.read()
+        errors_list = []
+
+        # First off, test if we have a session at all.
+        if not isinstance(client_session, dict):
+            raise AuthenticationFailed(ErrorMessages.NOT_LOGGED_IN)
+
+        # Test all_of
+        all_of_set = to_set(all_of)
+        for requirement in all_of_set:
+            if callable(requirement):
+                passes, desc = requirement(client_session)
+                if passes is False:
+                    errors_list.append(desc)
+        # If we encountered an error, bail early
+        if errors_list:
+            raise AuthenticationFailed("\n".join(errors_list))
+
+        # So far, so good? Run the any_of if present, break if any single test succeeds.
+        any_of_set = to_set(any_of)
+        for requirement in any_of_set:
+            if callable(requirement):
+                passes, desc = requirement(client_session)
+                if passes is False:
+                    errors_list.append(desc)
+                else:
+                    # If a test passed, we can clear the failures and pass
+                    errors_list.clear()
+                    break
+        # If no tests passed, errors_list should have at least one entry.
+        if errors_list:
+            raise AuthenticationFailed("\n".join(errors_list))
+        return await func()
+
+    # If decorator is passed without arguments, func will be an async function
+    # In this case, we will return a simple wrapper.
+    if asyncio.iscoroutinefunction(func):
+        return functools.wraps(func)(functools.partial(require_wrapper, func))
+
+    # If passed with args, we construct a "double wrapper" and return it.
+    def require_with_args(original_func: typing.Callable):
+        # If decorated without keywords, func disappears in the outer scope and is replaced with all_of,
+        # so we account for this by swapping around the arguments just in time.
+        if not asyncio.iscoroutinefunction(func):
+            return functools.wraps(original_func)(
+                functools.partial(require_wrapper, original_func, all_of=to_set(func), any_of=any_of)
+            )
+        return functools.wraps(original_func)(
+            functools.partial(require_wrapper, original_func, all_of=all_of, any_of=any_of)
+        )
+
+    return require_with_args
