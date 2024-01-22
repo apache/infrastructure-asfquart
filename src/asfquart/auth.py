@@ -53,7 +53,9 @@ def requirements_to_iter(args: typing.Any):
     # Test that each requirement is an allowed one (belongs to the Requirements class)
     for req in args:
         if not callable(req) or req != getattr(Requirements, req.__name__, None):
-            raise TypeError(f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class.")
+            raise TypeError(
+                f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class."
+            )
     return args
 
 
@@ -126,10 +128,17 @@ def require(
         # so we account for this by swapping around the arguments just in time if needed.
         if not asyncio.iscoroutinefunction(func):
             return functools.wraps(original_func)(
-                functools.partial(require_wrapper, original_func, all_of=requirements_to_iter(all_of or func), any_of=requirements_to_iter(any_of))
+                functools.partial(
+                    require_wrapper,
+                    original_func,
+                    all_of=requirements_to_iter(all_of or func),
+                    any_of=requirements_to_iter(any_of),
+                )
             )
         return functools.wraps(original_func)(
-            functools.partial(require_wrapper, original_func, all_of=requirements_to_iter(all_of), any_of=requirements_to_iter(any_of))
+            functools.partial(
+                require_wrapper, original_func, all_of=requirements_to_iter(all_of), any_of=requirements_to_iter(any_of)
+            )
         )
 
     return require_with_args
