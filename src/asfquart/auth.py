@@ -4,7 +4,7 @@ from . import base, session
 import functools
 import typing
 import asyncio
-
+import collections.abc
 
 
 class ErrorMessages:
@@ -42,16 +42,19 @@ class AuthenticationFailed(base.ASFQuartException):
         super().__init__(self.message, self.errorcode)
 
 
-def to_set(args: typing.Any):
-    """Converts any auth args (single arg, list, tuple) to a set"""
-    # A single test
-    if callable(args):
-        return {args}
-    # Nothing at all, empty set
-    elif args is None:
-        return set()
-    # A list or tuple, set-ify
-    return set(args)
+def requirements_to_iter(args: typing.Any):
+    """Converts any auth req args (single arg, list, tuple) to an iterable if not already one"""
+    # No args? return empty list
+    if args is None:
+        return []
+    # Single arg? Convert to list first
+    if not isinstance(args, collections.abc.Iterable):
+        args = [args]
+    # Test that each requirement is an allowed one (belongs to the Requirements class)
+    for req in args:
+        if not callable(req) or req != getattr(Requirements, req.__name__, None):
+            raise TypeError(f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class.")
+    return args
 
 
 def require(
@@ -83,33 +86,30 @@ def require(
     async def require_wrapper(func: typing.Callable, all_of=None, any_of=None):
         client_session = session.read()
         errors_list = []
-
         # First off, test if we have a session at all.
         if not isinstance(client_session, dict):
             raise AuthenticationFailed(ErrorMessages.NOT_LOGGED_IN)
 
         # Test all_of
-        all_of_set = to_set(all_of)
+        all_of_set = requirements_to_iter(all_of)
         for requirement in all_of_set:
-            if callable(requirement):
-                passes, desc = requirement(client_session)
-                if passes is False:
-                    errors_list.append(desc)
+            passes, desc = requirement(client_session)
+            if passes is False:
+                errors_list.append(desc)
         # If we encountered an error, bail early
         if errors_list:
             raise AuthenticationFailed("\n".join(errors_list))
 
         # So far, so good? Run the any_of if present, break if any single test succeeds.
-        any_of_set = to_set(any_of)
+        any_of_set = requirements_to_iter(any_of)
         for requirement in any_of_set:
-            if callable(requirement):
-                passes, desc = requirement(client_session)
-                if passes is False:
-                    errors_list.append(desc)
-                else:
-                    # If a test passed, we can clear the failures and pass
-                    errors_list.clear()
-                    break
+            passes, desc = requirement(client_session)
+            if passes is False:
+                errors_list.append(desc)
+            else:
+                # If a test passed, we can clear the failures and pass
+                errors_list.clear()
+                break
         # If no tests passed, errors_list should have at least one entry.
         if errors_list:
             raise AuthenticationFailed("\n".join(errors_list))
@@ -123,13 +123,13 @@ def require(
     # If passed with args, we construct a "double wrapper" and return it.
     def require_with_args(original_func: typing.Callable):
         # If decorated without keywords, func disappears in the outer scope and is replaced with all_of,
-        # so we account for this by swapping around the arguments just in time.
+        # so we account for this by swapping around the arguments just in time if needed.
         if not asyncio.iscoroutinefunction(func):
             return functools.wraps(original_func)(
-                functools.partial(require_wrapper, original_func, all_of=to_set(func), any_of=any_of)
+                functools.partial(require_wrapper, original_func, all_of=requirements_to_iter(all_of or func), any_of=requirements_to_iter(any_of))
             )
         return functools.wraps(original_func)(
-            functools.partial(require_wrapper, original_func, all_of=all_of, any_of=any_of)
+            functools.partial(require_wrapper, original_func, all_of=requirements_to_iter(all_of), any_of=requirements_to_iter(any_of))
         )
 
     return require_with_args
