@@ -19,9 +19,10 @@ from asfquart.auth import Requirements as R
 
 @pytest.mark.asyncio
 @pytest.mark.auth
-async def test_auth():
+async def test_auth_basics():
     asfquart.construct("foobar")
 
+    # Generic auth test, just requires a valid session
     @asfquart.auth.require
     async def requires_session():
         pass
@@ -36,6 +37,17 @@ async def test_auth():
     # Test with session, should work.
     quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar"}}
     await requires_session()
+
+    # Test with a bad requirement, should fail with a TypeError.
+    with pytest.raises(TypeError):
+        @asfquart.auth.require({R.member, print})
+        async def requires_bad_thing():
+            pass
+        # Same bad one, but with explicit any_of
+        @asfquart.auth.require(any_of={R.member, print})
+        async def requires_bad_thing():
+            pass
+
 
 
 @pytest.mark.asyncio
