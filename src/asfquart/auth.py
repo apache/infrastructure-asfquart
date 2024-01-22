@@ -2,9 +2,9 @@
 """ASFQuart - Authentication methods and decorators"""
 from . import base, session
 import functools
-import enum
 import typing
 import asyncio
+
 
 
 class ErrorMessages:
