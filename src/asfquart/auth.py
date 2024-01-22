@@ -15,7 +15,7 @@ class ErrorMessages:
 
 
 class Requirements:
-    """ "various pre-defined access requirements"""
+    """Various pre-defined access requirements"""
 
     @staticmethod
     def mfa_enabled(client_session):
@@ -28,10 +28,12 @@ class Requirements:
 
     @staticmethod
     def member(client_session):
+        # Anything but True will cause a failure.
         return client_session.get("isMember") is True, ErrorMessages.NOT_MEMBER
 
     @staticmethod
     def chair(client_session):
+        # Anything but True will cause a failure.
         return client_session.get("isChair") is True, ErrorMessages.NOT_CHAIR
 
 
@@ -61,13 +63,13 @@ def requirements_to_iter(args: typing.Any):
 
 def require(
     func: typing.Optional[typing.Callable] = None,
-    all_of: typing.Optional[typing.Union[typing.Iterable]] = None,
-    any_of: typing.Optional[typing.Union[typing.Iterable]] = None,
+    all_of: typing.Optional[typing.Iterable] = None,
+    any_of: typing.Optional[typing.Iterable] = None,
 ):
     """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
     of requirements. By default, all requirements must be satisfied, though this can be made optional by
     explicitly using the `all_of` or `any_of` keywords to specify optionality. Requirements must be part
-    of the asfquart.auth.requirements class, which consists of the following test:
+    of the asfquart.auth.Requirements class, which consists of the following test:
 
     - mfa_enabled: The client must authenticate with a method that has MFA enabled
     - committer: The client must be a committer
@@ -96,7 +98,7 @@ def require(
         all_of_set = requirements_to_iter(all_of)
         for requirement in all_of_set:
             passes, desc = requirement(client_session)
-            if passes is False:
+            if not passes:
                 errors_list.append(desc)
         # If we encountered an error, bail early
         if errors_list:
@@ -106,7 +108,7 @@ def require(
         any_of_set = requirements_to_iter(any_of)
         for requirement in any_of_set:
             passes, desc = requirement(client_session)
-            if passes is False:
+            if not passes:
                 errors_list.append(desc)
             else:
                 # If a test passed, we can clear the failures and pass
