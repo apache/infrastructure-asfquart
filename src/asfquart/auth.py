@@ -56,8 +56,8 @@ def to_set(args: typing.Any):
 
 def require(
     func: typing.Optional[typing.Callable] = None,
-    all_of: typing.Optional[typing.Union[typing.Callable, typing.List, typing.Tuple, typing.Set]] = None,
-    any_of: typing.Optional[typing.Union[typing.Callable, typing.List, typing.Tuple, typing.Set]] = None,
+    all_of: typing.Optional[typing.Union[typing.Iterable]] = None,
+    any_of: typing.Optional[typing.Union[typing.Iterable]] = None,
 ):
     """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
     of requirements. By default, all requirements must be satisfied, though this can be made optional by
