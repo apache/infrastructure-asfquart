@@ -33,3 +33,8 @@ def write(session_data: dict):
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
     dict_copy["uts"] = time.time()   # Set last access timestamp for expiry checks later
     quart.session[cookie_id] = dict_copy
+
+
+def clear():
+    """Clears a session"""
+    quart.session.pop(base.APP.app_id, None)  # Safely pop the session if it's there.
