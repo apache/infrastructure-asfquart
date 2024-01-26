@@ -46,19 +46,13 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                 f"{uri}?state={state}",
             )
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
-            headers = {
-                "Location": redirect_url,
-            }
-            return quart.Response(status=302, response="Redirecting...", headers=headers)
+            return quart.redirect(redirect_url)
 
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
             asfquart.session.clear()
             if logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
-                headers = {
-                    "Location": logout_uri,
-                }
-                return quart.Response(status=302, response="Redirecting...", headers=headers)
+                return quart.redirect(logout_uri)
             return quart.Response(
                 status=200,
                 response=f"Client session removed, goodbye!\n",
@@ -84,10 +78,7 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                     oauth_data = await rv.json()
                     asfquart.session.write(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
-                    headers = {
-                        "Location": redirect_uri,
-                    }
-                    return quart.Response(status=302, response="Redirecting...", headers=headers)
+                    return quart.redirect(redirect_uri)
                 # Otherwise, just say hi
                 return quart.Response(
                     status=200,
