@@ -2,7 +2,7 @@
 """Generic endpoints for ASFQuart"""
 
 import quart
-import uuid
+import secrets
 import urllib
 import aiohttp
 import time
@@ -37,7 +37,7 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
-            state = str(uuid.uuid4())
+            state = secrets.token_hex(16)
             # Save the time we initialized this state and the optional login redirect URI
             pending_states[state] = [time.time(), login_uri]
             callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
