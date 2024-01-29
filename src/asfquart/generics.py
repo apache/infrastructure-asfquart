@@ -92,3 +92,20 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                     status=404,
                     response=f"No active session found.\n",
                 )
+
+
+def enforce_login(redirect_uri="/auth"):
+    """Enforces redirect to the auth provider (if enabled) when a client tries to access a restricted page
+    without being logged in. Only redirects if there is no active user session. On success, the client
+    is redirected back to the origin page that was restricted. If it is still restricted, the client
+    will instead see an error message."""
+    import asfquart
+    import asfquart.auth
+    import asfquart.session
+    @asfquart.APP.errorhandler(asfquart.auth.AuthenticationFailed)
+    async def auth_redirect(error):
+        # If we have no client session, redirect to auth flow
+        if not asfquart.session.read():
+            return quart.redirect(f"{redirect_uri}?login={quart.request.full_path}")
+        # If we have a session, but still no access, just say so in plain text.
+        return quart.Response(status=error.errorcode, response=error.message)
