@@ -82,6 +82,10 @@ def construct(name, *args, **kw):
     global APP
     APP = QuartApp(name, *args, **kw)
 
+    @APP.errorhandler(ASFQuartException)  # ASFQuart exception handler
+    async def handle_exception(error):
+        return quart.Response(status=error.errorcode, response=error.message)
+
     # Now stash this into the package module, for later pick-up.
     import asfquart
     asfquart.APP = APP
