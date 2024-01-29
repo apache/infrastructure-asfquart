@@ -24,15 +24,18 @@ class Requirements:
 
     @staticmethod
     def committer(client_session):
+        """Tests for whether the user is a committer on any project"""
         return isinstance(client_session, dict), ErrorMessages.NOT_LOGGED_IN
 
     @staticmethod
     def member(client_session):
+        """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
         return client_session.get("isMember") is True, ErrorMessages.NOT_MEMBER
 
     @staticmethod
     def chair(client_session):
+        """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
         return client_session.get("isChair") is True, ErrorMessages.NOT_CHAIR
 
