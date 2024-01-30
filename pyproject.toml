@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "asfquart"
 version = "0.1.0"
 dependencies = [
-    "aiohttp==3.8.6",
+    "aiohttp==3.9.2",
     "PyYAML>=6.0.1",
     "pytest==7.2.0",
     "pytest-cov>=4.0.0",
