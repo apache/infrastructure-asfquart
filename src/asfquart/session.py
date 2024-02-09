@@ -27,7 +27,8 @@ def read(expiry_time=86400*7):
                 # Update the timestamp, since the session has been requested (and thus used)
                 session_dict["uts"] = now
                 return session_dict
-    # Check for session provides in Auth header
+    # Check for session providers in Auth header. These sessions are created ad-hoc, and do not linger in the
+    # quart session DB.
     elif 'Authorization' in quart.request.headers:
         auth_header = quart.request.headers.get("Authorization")
         if " " in auth_header:
