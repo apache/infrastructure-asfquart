@@ -12,5 +12,7 @@ pytest-mock = "==3.10.0"
 quart = ">=0.19.3"
 aiohttp = ">=3.9.1"
 hypercorn = "*"
+build = "*"
+twine = "*"
 
 [dev-packages]
