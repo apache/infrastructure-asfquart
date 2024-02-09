@@ -3,6 +3,8 @@
 from . import base
 import quart.sessions
 import time
+import binascii
+import base64
 
 
 def read(expiry_time=86400*7):
@@ -25,6 +27,23 @@ def read(expiry_time=86400*7):
                 # Update the timestamp, since the session has been requested (and thus used)
                 session_dict["uts"] = now
                 return session_dict
+    # Check for session provides in Auth header
+    elif 'Authorization' in quart.request.headers:
+        auth_header = quart.request.headers.get("Authorization")
+        if " " in auth_header:
+            authtype, authparams = auth_header.split(" ", maxsplit=1)
+            match authtype.lower():
+                case "bearer":  # Role accounts, PATs - TBD
+                    print(f"Debug: Do auth check for role with token {authparams} here...")
+                case "basic":  # Basic LDAP auth - will need to grab info from LDAP
+                    try:
+                        params_decoded = base64.standard_b64decode(authparams).decode("utf-8")
+                        auth_user, auth_pwd = params_decoded.split(":", maxsplit=1)
+                        print(f"Debug: Do auth check for {auth_user} here...")
+                    except (binascii.Error, ValueError) as e:
+                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
+                case default:
+                    raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
 
 def write(session_data: dict):
