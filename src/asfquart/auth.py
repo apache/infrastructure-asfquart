@@ -39,7 +39,6 @@ class Requirements:
         # Anything but True will cause a failure.
         return client_session.get("isChair") is True, ErrorMessages.NOT_CHAIR
 
-
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
         self.message = message
@@ -91,7 +90,7 @@ def require(
     """
 
     async def require_wrapper(func: typing.Callable, all_of=None, any_of=None):
-        client_session = session.read()
+        client_session = await session.read()
         errors_list = []
         # First off, test if we have a session at all.
         if not isinstance(client_session, dict):

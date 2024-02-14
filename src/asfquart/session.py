@@ -7,7 +7,7 @@ import binascii
 import base64
 
 
-def read(expiry_time=86400*7):
+async def read(expiry_time=86400*7):
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
     # We store the session cookie using the base.APP.app_id identifier, to distinguish between
@@ -31,19 +31,13 @@ def read(expiry_time=86400*7):
     # quart session DB. Since quart.request is not defined inside testing frameworks, the bool(request) test
     # asks the werkzeug LocalProxy wrapper whether a request exists or not, and bails if not.
     elif bool(quart.request) and 'Authorization' in quart.request.headers:
-        auth_header = quart.request.headers.get("Authorization")
-        if " " in auth_header:
-            authtype, authparams = auth_header.split(" ", maxsplit=1)
-            match authtype.lower():
+        match quart.request.authorization.type:
                 case "bearer":  # Role accounts, PATs - TBD
-                    print(f"Debug: Do auth check for role with token {authparams} here...")
+                    print(f"Debug: Do auth check for role with token {quart.request.authorization.token} here...")
                 case "basic":  # Basic LDAP auth - will need to grab info from LDAP
-                    try:
-                        params_decoded = base64.standard_b64decode(authparams).decode("utf-8")
-                        auth_user, auth_pwd = params_decoded.split(":", maxsplit=1)
-                        print(f"Debug: Do auth check for {auth_user} here...")
-                    except (binascii.Error, ValueError) as e:
-                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
+                    auth_user = quart.request.authorization.parameters["username"]
+                    auth_pwd = quart.request.authorization.parameters["password"]
+                    print(f"Debug: Do auth check for {auth_user} here...")
                 case default:
                     raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
