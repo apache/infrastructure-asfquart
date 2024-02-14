@@ -15,3 +15,8 @@ dependencies = [
 ]
 license = {file = "LICENSE.txt"}
 readme = "README.md"
+
+[project.optional-dependencies]
+ldap = [
+    "asfpy[aioldap]"
+]
