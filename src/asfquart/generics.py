@@ -105,7 +105,7 @@ def enforce_login(redirect_uri="/auth"):
     @asfquart.APP.errorhandler(asfquart.auth.AuthenticationFailed)
     async def auth_redirect(error):
         # If we have no client session, redirect to auth flow
-        if not await asfquart.session.read():
+        if not quart.request.authorization and not await asfquart.session.read():
             return quart.redirect(f"{redirect_uri}?login={quart.request.full_path}")
         # If we have a session, but still no access, just say so in plain text.
         return quart.Response(status=error.errorcode, response=error.message)
