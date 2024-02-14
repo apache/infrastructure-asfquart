@@ -7,3 +7,9 @@ dist/
 
 # Caches
 __pycache__
+
+# Doxygen
+docs
+
+# Test files
+apptoken.txt
