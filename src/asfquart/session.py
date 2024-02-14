@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """ASFQuart - User session methods and decorators"""
-from . import base
+from . import base, ldap
 import quart.sessions
 import time
 import binascii
-import base64
 
 
 async def read(expiry_time=86400*7):
@@ -35,9 +34,23 @@ async def read(expiry_time=86400*7):
                 case "bearer":  # Role accounts, PATs - TBD
                     print(f"Debug: Do auth check for role with token {quart.request.authorization.token} here...")
                 case "basic":  # Basic LDAP auth - will need to grab info from LDAP
-                    auth_user = quart.request.authorization.parameters["username"]
-                    auth_pwd = quart.request.authorization.parameters["password"]
-                    print(f"Debug: Do auth check for {auth_user} here...")
+                    if ldap.LDAP_SUPPORTED:
+                        try:
+                            auth_user = quart.request.authorization.parameters["username"]
+                            auth_pwd = quart.request.authorization.parameters["password"]
+                            ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
+                            ldap_affiliations = await ldap_client.get_affiliations()
+                            # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
+                            session_dict = {
+                                "uid": auth_user,
+                                "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
+                                "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
+                            }
+                            return session_dict
+                        except (binascii.Error, ValueError, KeyError) as e:
+                            # binascii/ValueError == bad base64 auth string
+                            # KeyError = missing username or password
+                            raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
                 case default:
                     raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
