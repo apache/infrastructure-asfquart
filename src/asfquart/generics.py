@@ -85,7 +85,7 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                     response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
                 )
             else:  # Just spit out existing session if it's there
-                client_session = asfquart.session.read()
+                client_session = await asfquart.session.read()
                 if client_session and isinstance(client_session, dict):
                     return client_session
                 return quart.Response(
