@@ -1,12 +1,33 @@
 #!/usr/bin/env python3
 """ASFQuart - User session methods and decorators"""
+import typing
+
 from . import base, ldap
 import quart.sessions
 import time
 import binascii
 
 
-async def read(expiry_time=86400*7):
+class ClientSession(dict):
+    def __init__(self, raw_data: dict):
+        """Initializes a client session from a raw dict. ClientSession is a subclassed dict, so that
+        we can send it to quart in a format it can render."""
+        super().__init__()
+        self.uid = raw_data.get("uid")
+        self.dn = raw_data.get("dn")
+        self.fullname = raw_data.get("fullname")
+        self.email = raw_data.get("email", f"{self.uid}@apache.org")
+        self.isMember = raw_data.get("isMember", False)
+        self.isChair = raw_data.get("isChair", False)
+        self.isRoot = raw_data.get("isRoot", False)
+        self.committees = raw_data.get("pmcs", [])
+        self.projects = raw_data.get("projects", [])
+        self.mfa = raw_data.get("mfa", False)
+        # Update the external dict representation with internal values
+        self.update(self.__dict__.items())
+
+
+async def read(expiry_time=86400*7) -> typing.Optional[ClientSession]:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
     # We store the session cookie using the base.APP.app_id identifier, to distinguish between
@@ -25,7 +46,7 @@ async def read(expiry_time=86400*7):
             else:
                 # Update the timestamp, since the session has been requested (and thus used)
                 session_dict["uts"] = now
-                return session_dict
+                return ClientSession(session_dict)
     # Check for session providers in Auth header. These sessions are created ad-hoc, and do not linger in the
     # quart session DB. Since quart.request is not defined inside testing frameworks, the bool(request) test
     # asks the werkzeug LocalProxy wrapper whether a request exists or not, and bails if not.
@@ -46,7 +67,7 @@ async def read(expiry_time=86400*7):
                                 "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
                                 "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
                             }
-                            return session_dict
+                            return ClientSession(session_dict)
                         except (binascii.Error, ValueError, KeyError) as e:
                             # binascii/ValueError == bad base64 auth string
                             # KeyError = missing username or password

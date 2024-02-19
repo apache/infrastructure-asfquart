@@ -86,7 +86,7 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                 )
             else:  # Just spit out existing session if it's there
                 client_session = await asfquart.session.read()
-                if client_session and isinstance(client_session, dict):
+                if isinstance(client_session, asfquart.session.ClientSession):
                     return client_session
                 return quart.Response(
                     status=404,

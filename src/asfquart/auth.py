@@ -18,26 +18,27 @@ class Requirements:
     """Various pre-defined access requirements"""
 
     @staticmethod
-    def mfa_enabled(client_session):
+    def mfa_enabled(client_session: session.ClientSession):
         """Tests for MFA enabled in the client session"""
-        return isinstance(client_session, dict) and client_session.get("mfa") is True, ErrorMessages.NO_MFA
+        return isinstance(client_session, session.ClientSession) and client_session.mfa is True, ErrorMessages.NO_MFA
 
     @staticmethod
-    def committer(client_session):
+    def committer(client_session: session.ClientSession):
         """Tests for whether the user is a committer on any project"""
-        return isinstance(client_session, dict), ErrorMessages.NOT_LOGGED_IN
+        return isinstance(client_session, session.ClientSession), ErrorMessages.NOT_LOGGED_IN
 
     @staticmethod
-    def member(client_session):
+    def member(client_session: session.ClientSession):
         """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
-        return client_session.get("isMember") is True, ErrorMessages.NOT_MEMBER
+        return client_session.isMember is True, ErrorMessages.NOT_MEMBER
 
     @staticmethod
-    def chair(client_session):
+    def chair(client_session: session.ClientSession):
         """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
-        return client_session.get("isChair") is True, ErrorMessages.NOT_CHAIR
+        return client_session.isChair is True, ErrorMessages.NOT_CHAIR
+
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
