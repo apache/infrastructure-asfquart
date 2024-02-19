@@ -84,6 +84,10 @@ def construct(name, *args, **kw):
 
     @APP.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
+        # If an error is thrown before the request body has been consumed, eat it quietly.
+        if not quart.request.body._complete.is_set():
+            async for _data in quart.request.body:
+                pass
         return quart.Response(status=error.errorcode, response=error.message)
 
     # Now stash this into the package module, for later pick-up.
