@@ -92,5 +92,7 @@ def construct(name, *args, **kw):
 
     # Now stash this into the package module, for later pick-up.
     import asfquart
+    import asfquart.utils
+    APP.url_map.converters['filename'] = asfquart.utils.FilenameConverter
     asfquart.APP = APP
     return APP

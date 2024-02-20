@@ -2,6 +2,7 @@
 """Miscellaneous helpers for ASFQuart"""
 
 import quart
+import werkzeug.routing
 
 DEFAULT_MAX_CONTENT_LENGTH = 102400
 
@@ -35,3 +36,18 @@ async def formdata():
         xjson = await quart.request.json
         form_data.update(xjson)
     return form_data
+
+
+class FilenameConverter(werkzeug.routing.BaseConverter):
+    """Simple converter that splits a filename into a basename and an extension. Only deals with filenames, not
+    full paths. Thus, <filename> will match foo.txt, but not /foo/bar.baz"""
+
+    regex = r"^[^/.]*(\.[A-Za-z0-9]+)?$"
+    part_isolating = False
+
+    def to_python(self, filename):
+        extension = ""
+        # If foo.bar, split into base and ext. Otherwise, keep filename as full string (even for .htaccess etc)
+        if "." in filename[1:]:
+            filename, extension = filename.split(".", maxsplit=1)
+        return filename, extension
