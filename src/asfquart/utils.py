@@ -3,6 +3,7 @@
 
 import quart
 import werkzeug.routing
+import os.path
 
 DEFAULT_MAX_CONTENT_LENGTH = 102400
 
@@ -46,8 +47,4 @@ class FilenameConverter(werkzeug.routing.BaseConverter):
     part_isolating = False
 
     def to_python(self, filename):
-        extension = ""
-        # If foo.bar, split into base and ext. Otherwise, keep filename as full string (even for .htaccess etc)
-        if "." in filename[1:]:
-            filename, extension = filename.split(".", maxsplit=1)
-        return filename, extension
+        return os.path.splitext(filename)
