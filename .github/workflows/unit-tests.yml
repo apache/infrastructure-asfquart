@@ -22,7 +22,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        apt -y install python3-dev libldap2-dev libsasl2-dev
+        sudo apt -y install python3-dev libldap2-dev libsasl2-dev
         python3 -m pip install --upgrade pipenv wheel
         pipenv install
     - name: Test with pytest
