@@ -15,6 +15,7 @@ dependencies = [
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.20.3",
     "pytest-mock>=3.10.0",
+    "quart>=0.19.4",
 ]
 license = {file = "LICENSE"}
 readme = "README.md"
