@@ -11,9 +11,9 @@ import time
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+DEFAULT_OAUTH_URI = "/auth"
 
-
-def setup_oauth(uri="/auth", workflow_timeout: int = 900):
+def setup_oauth(uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
     """ "Sets up a generic ASF OAuth endpoint. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
     be completed. The OAuth endpoint handles everything related to logging in and out via OAuth,
@@ -94,7 +94,7 @@ def setup_oauth(uri="/auth", workflow_timeout: int = 900):
                 )
 
 
-def enforce_login(redirect_uri="/auth"):
+def enforce_login(redirect_uri=DEFAULT_OAUTH_URI):
     """Enforces redirect to the auth provider (if enabled) when a client tries to access a restricted page
     without being logged in. Only redirects if there is no active user session. On success, the client
     is redirected back to the origin page that was restricted. If it is still restricted, the client
