@@ -79,6 +79,16 @@ class QuartApp(quart.Quart):
 def construct(name, *args, **kw):
     ### add/alter/update ARGS and KW for our specific preferences
 
+    # By default, we will set up OAuth and force login redirect on auth failure
+    # This can be turned off by setting oauth=False in the construct call.
+    # To use a different oauth URI than the default /auth, specify the URI
+    # in the oauth argument, for instance: asfquart.construct("myapp", oauth="/session")
+    setup_oauth = kw.get("oauth", True)
+    force_auth_redirect = setup_oauth and kw.get("force_login", True)
+    # Pop the two arguments before we set up Quart, since they will be unknown to the parent class
+    kw.pop("oauth", None)
+    kw.pop("force_login", None)
+
     global APP
     APP = QuartApp(name, *args, **kw)
 
@@ -95,4 +105,14 @@ def construct(name, *args, **kw):
     import asfquart.utils
     APP.url_map.converters['filename'] = asfquart.utils.FilenameConverter
     asfquart.APP = APP
+
+    # Set up oauth and login redirects if needed
+    if setup_oauth:
+        import asfquart.generics
+        # Figure out the OAuth URI we want to use.
+        oauth_uri = isinstance(setup_oauth, str) and setup_oauth or asfquart.generics.DEFAULT_OAUTH_URI
+        asfquart.generics.setup_oauth(uri=oauth_uri)
+        if force_auth_redirect:
+            asfquart.generics.enforce_login(redirect_uri=oauth_uri)
+
     return APP
