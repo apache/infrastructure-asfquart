@@ -14,7 +14,6 @@ import asfquart.generics
 
 def my_app():
     asfquart.construct("my_app_service")
-    asfquart.generics.setup_oauth()   # Sets up /auth for OAuth handling
     asfquart.generics.enforce_login() # If not logged in, redirect to the above default login flow
 
     @asfquart.APP.route("/")
