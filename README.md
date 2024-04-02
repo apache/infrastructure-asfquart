@@ -13,8 +13,8 @@ import asfquart.auth
 import asfquart.generics
 
 def my_app():
+    # Construct the quart service. By default, the oauth gateway is enabled at /oauth.
     asfquart.construct("my_app_service")
-    asfquart.generics.enforce_login() # If not logged in, redirect to the above default login flow
 
     @asfquart.APP.route("/")
     async def homepage():
