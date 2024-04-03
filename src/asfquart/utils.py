@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Miscellaneous helpers for ASFQuart"""
 
+import os.path
+import io
+import functools
+
 import quart
 import werkzeug.routing
-import os.path
 
 DEFAULT_MAX_CONTENT_LENGTH = 102400
 
@@ -48,3 +51,51 @@ class FilenameConverter(werkzeug.routing.BaseConverter):
 
     def to_python(self, filename):
         return os.path.splitext(filename)
+
+
+#
+# Decorator to use a template in order to generate a webpage with some
+# provided data.
+#
+# EXAMPLE:
+#
+#   @use_template(T_MAIN)
+#   def main_page():
+#       ...
+#       data = {
+#           'title': 'Main Page',
+#           'count': 42,
+#       }
+#       return data
+#
+# The data dictionary will be provided to the EZT template for
+# rendering the page.
+#
+def use_template(template):
+
+    # The @use_template(T_MAIN) example is actually a function call
+    # to *produce* a decorator function. This is that decorator. It
+    # takes a function to wrap (FUNC), and produces a wrapping function
+    # that will be used during operation (WRAPPER).
+    def decorator(func):
+
+        # .wraps() copies name/etc from FUNC onto the wrapper function
+        # that we return.
+        @functools.wraps(func)
+        async def wrapper(*args, **kw):
+            # Get the data dictionary from the page endpoint.
+            data = await func(*args, **kw)
+
+            # Render that page, and return it to Quart.
+            return render(template, data)
+
+        return wrapper
+
+    return decorator
+
+
+def render(t, data):
+    "Simple function to render a template into a string."
+    buf = io.StringIO()
+    t.generate(buf, data)
+    return buf.getvalue()
