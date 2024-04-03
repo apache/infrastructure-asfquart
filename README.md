@@ -10,7 +10,6 @@
 ~~~python
 import asfquart
 import asfquart.auth
-import asfquart.generics
 
 def my_app():
     # Construct the quart service. By default, the oauth gateway is enabled at /oauth.
