@@ -4,6 +4,7 @@
   This repository will house the future [Quart](https://github.com/pallets/quart/) framework for use 
   within ASF web applications. Nothing much to see here yet...
 
+  For more detailed documentation, see the [documentation page](docs/readme.md).
   
 ## Primer
 
