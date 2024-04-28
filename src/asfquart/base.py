@@ -88,10 +88,9 @@ def construct(name, *args, **kw):
     # Note: order is important, as we want the .pop() to always execute.
     force_auth_redirect = kw.pop("force_login", True) and setup_oauth
 
-    global APP
-    APP = QuartApp(name, *args, **kw)
+    app = QuartApp(name, *args, **kw)
 
-    @APP.errorhandler(ASFQuartException)  # ASFQuart exception handler
+    @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
         # If an error is thrown before the request body has been consumed, eat it quietly.
         if not quart.request.body._complete.is_set():
@@ -99,18 +98,20 @@ def construct(name, *args, **kw):
                 pass
         return quart.Response(status=error.errorcode, response=error.message)
 
-    # Now stash this into the package module, for later pick-up.
+    # Provide our standard filename argument converter.
     import asfquart.utils
-    APP.url_map.converters['filename'] = asfquart.utils.FilenameConverter
-    asfquart.APP = APP
+    app.url_map.converters['filename'] = asfquart.utils.FilenameConverter
 
     # Set up oauth and login redirects if needed
     if setup_oauth:
         import asfquart.generics
         # Figure out the OAuth URI we want to use.
         oauth_uri = setup_oauth if isinstance(setup_oauth, str) else asfquart.generics.DEFAULT_OAUTH_URI
-        asfquart.generics.setup_oauth(uri=oauth_uri)
+        asfquart.generics.setup_oauth(app, uri=oauth_uri)
         if force_auth_redirect:
-            asfquart.generics.enforce_login(redirect_uri=oauth_uri)
+            asfquart.generics.enforce_login(app, redirect_uri=oauth_uri)
 
-    return APP
+    # Now stash this into the package module, for later pick-up.
+    asfquart.APP = app
+
+    return app

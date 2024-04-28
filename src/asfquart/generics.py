@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
-import quart
 import secrets
 import urllib
-import aiohttp
 import time
+
+import quart
+import aiohttp
+
+import asfquart  # implies .session
 
 
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
@@ -13,8 +16,8 @@ OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"
 
-def setup_oauth(uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
-    """ "Sets up a generic ASF OAuth endpoint. The default URI is /auth, and the
+def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
+    """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
     be completed. The OAuth endpoint handles everything related to logging in and out via OAuth,
     and has the following actions:
@@ -29,9 +32,8 @@ def setup_oauth(uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
     """
 
     pending_states = {}  # keeps track of pending states and their expiry
-    import asfquart  # We import at this point to grab the APP pointer
 
-    @asfquart.APP.route(uri)
+    @app.route(uri)
     async def oauth_endpoint():
         # Init oauth login
         login_uri = quart.request.args.get("login")
@@ -94,16 +96,14 @@ def setup_oauth(uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 )
 
 
-def enforce_login(redirect_uri=DEFAULT_OAUTH_URI):
+def enforce_login(app, redirect_uri=DEFAULT_OAUTH_URI):
     """Enforces redirect to the auth provider (if enabled) when a client tries to access a restricted page
     without being logged in. Only redirects if there is no active user session. On success, the client
     is redirected back to the origin page that was restricted. If it is still restricted, the client
     will instead see an error message."""
-    import asfquart
     import asfquart.auth
-    import asfquart.session
 
-    @asfquart.APP.errorhandler(asfquart.auth.AuthenticationFailed)
+    @app.errorhandler(asfquart.auth.AuthenticationFailed)
     async def auth_redirect(error):
         # If we have no client session (and X-No-Redirect is not set), redirect to auth flow
         if (
