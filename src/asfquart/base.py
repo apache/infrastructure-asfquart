@@ -83,11 +83,10 @@ def construct(name, *args, **kw):
     # This can be turned off by setting oauth=False in the construct call.
     # To use a different oauth URI than the default /auth, specify the URI
     # in the oauth argument, for instance: asfquart.construct("myapp", oauth="/session")
-    setup_oauth = kw.get("oauth", True)
-    force_auth_redirect = setup_oauth and kw.get("force_login", True)
-    # Pop the two arguments before we set up Quart, since they will be unknown to the parent class
-    kw.pop("oauth", None)
-    kw.pop("force_login", None)
+    # Pop the arguments from KW, as the parent class doesn't understand them.
+    setup_oauth = kw.pop("oauth", True)
+    # Note: order is important, as we want the .pop() to always execute.
+    force_auth_redirect = kw.pop("force_login", True) and setup_oauth
 
     global APP
     APP = QuartApp(name, *args, **kw)
@@ -101,7 +100,6 @@ def construct(name, *args, **kw):
         return quart.Response(status=error.errorcode, response=error.message)
 
     # Now stash this into the package module, for later pick-up.
-    import asfquart
     import asfquart.utils
     APP.url_map.converters['filename'] = asfquart.utils.FilenameConverter
     asfquart.APP = APP
@@ -110,7 +108,7 @@ def construct(name, *args, **kw):
     if setup_oauth:
         import asfquart.generics
         # Figure out the OAuth URI we want to use.
-        oauth_uri = isinstance(setup_oauth, str) and setup_oauth or asfquart.generics.DEFAULT_OAUTH_URI
+        oauth_uri = setup_oauth if isinstance(setup_oauth, str) else asfquart.generics.DEFAULT_OAUTH_URI
         asfquart.generics.setup_oauth(uri=oauth_uri)
         if force_auth_redirect:
             asfquart.generics.enforce_login(redirect_uri=oauth_uri)
