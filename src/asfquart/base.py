@@ -24,8 +24,11 @@ import pathlib
 import secrets
 import os
 import logging
+import functools
+import signal
 
 import quart
+import hypercorn.utils
 
 import __main__
 
@@ -74,6 +77,113 @@ class QuartApp(quart.Quart):
                 LOGGER.error(
                     f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
                 )
+
+    def runx(self, /,
+             host='0.0.0.0',
+             debug=True,
+             loop=None,
+             extra_files=set(),  # order does not matter
+             **kw):
+        """Extended version of Quart.run()
+
+        LOOP is the loop this app should run within. One will be constructed,
+        if this is not provided.
+
+        EXTRA_FILES is a set of files (### relative to?) that should be
+        watched for changes. If a change occurs, the app will be reloaded.
+        """
+
+        port = kw.pop('port', None)
+        assert port, "The port must be specified."
+
+        # NOTE: much of the code below is direct from quart/app.py:Quart.run()
+        # This local "copy" is to deal with the custom watcher/reloader.
+
+        if loop is None:
+            loop = asyncio.new_event_loop()
+            loop.set_debug(debug)
+
+            asyncio.set_event_loop(loop)
+
+        # Create a factory for a trigger that watches for exceptions.
+        trigger = self.factory_trigger(loop, extra_files)
+
+        # Construct a task to run the app.
+        task = self.run_task(host, port, debug,
+                             use_reloader=False,  # avoid the builtin reloader
+                             shutdown_trigger=factory_trigger(loop, extra_files),
+                             )
+
+        ### LOG/print some info about the app starting?
+        print(f' * Serving Quart app "{self.app_id}"')
+        print(f' * Debug mode: {self.debug}')
+        print(f' * Using reloader: CUSTOM')
+        print(f' * Running on http://{host}:{port}')
+        print(f' * ... CTRL + C to quit')
+
+        # Ready! Start running the app.
+        self.run_forever(loop, task)
+        # Being here, means graceful exit.
+
+    @staticmethod
+    def factory_trigger(loop, extra_files):
+        """Factory for an AWAITABLE that handles special exceptions.
+
+        The LOOP normally ignores all signals. This method will make the
+        loop catch SIGTERM/SIGINT, then set an Event to raise an exception
+        for a clean exit.
+
+        This will also observe files for changes, and signal the loop
+        to reload the application.
+        """
+
+        event = asyncio.Event()
+
+        def _signal_handler(*_) -> None:
+            event.set()
+
+        # Note: Quart.run() allows for this to be skipped. We do not.
+        loop.add_signal_handler(signal.SIGTERM, _signal_handler)
+        loop.add_signal_handler(signal.SIGINT, _signal_handler)
+
+        async def shutdown():
+            "Log a nice message when we're signalled to shut down."
+            try:
+                await hypercorn.utils.raise_shutdown(event.wait)
+            except hypercorn.utils.ShutdownError:
+                LOGGER.info('SHUTDOWN: Performing graceful exit...')
+                raise
+
+        # Normally, for the SHUTDOWN_TRIGGER, it simply completes and returns.
+        # We are gathering two tasks, so a completion will not happen. Thus,
+        # each task must raise an exception to make the next step happen.
+        # MustReloadError (from our file watcher) or ShutdownError (thrown by
+        # raise_shutdown() when the event gets set).
+        t1 = loop.create_task(QuartApp.watch(extra_files))
+        t2 = loop.create_task(shutdown())
+
+        async def gather():
+            await asyncio.gather(t1, t2)
+        return gather
+
+    @staticmethod
+    async def watch(extra_files):
+        ### for now, just use the standard observer. It loops forever, or
+        ### raises MustReloadError if a change is detected.
+        await hypercorn.utils.observe_changes(asyncio.sleep)
+
+    @staticmethod
+    def run_forever(loop, task):
+        "Run the application until exit, then cleanly shut down."
+        try:
+            loop.run_until_complete(task)
+        finally:
+            try:
+                quart.app._cancel_all_tasks(loop)
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
 
 
 def construct(name, *args, **kw):
