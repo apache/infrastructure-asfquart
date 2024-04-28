@@ -111,7 +111,7 @@ class QuartApp(quart.Quart):
         # Construct a task to run the app.
         task = self.run_task(host, port, debug,
                              use_reloader=False,  # avoid the builtin reloader
-                             shutdown_trigger=factory_trigger(loop, extra_files),
+                             shutdown_trigger=trigger,
                              )
 
         ### LOG/print some info about the app starting?
