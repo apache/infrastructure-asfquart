@@ -3,9 +3,11 @@
 import typing
 
 from . import base, ldap
-import quart.sessions
 import time
 import binascii
+
+import quart.sessions
+import asfquart
 
 
 class ClientSession(dict):
@@ -27,12 +29,16 @@ class ClientSession(dict):
         self.update(self.__dict__.items())
 
 
-async def read(expiry_time=86400*7) -> typing.Optional[ClientSession]:
+async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
-    # We store the session cookie using the base.APP.app_id identifier, to distinguish between
+
+    if app is None:
+        app = asfquart.APP
+
+    # We store the session cookie using the app.app_id identifier, to distinguish between
     # two asfquart apps running on the same hostname.
-    cookie_id = base.APP.app_id
+    cookie_id = app.app_id
     if cookie_id in quart.session:
         now = time.time()
         cookie_expiry_deadline = now - expiry_time
@@ -76,14 +82,22 @@ async def read(expiry_time=86400*7) -> typing.Optional[ClientSession]:
                     raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
 
-def write(session_data: dict):
+def write(session_data: dict, app=None):
     """Sets a cookie-based user session for this app"""
-    cookie_id = base.APP.app_id
+
+    if app is None:
+        app = asfquart.APP
+
+    cookie_id = app.app_id
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
     dict_copy["uts"] = time.time()   # Set last access timestamp for expiry checks later
     quart.session[cookie_id] = dict_copy
 
 
-def clear():
+def clear(app=None):
     """Clears a session"""
-    quart.session.pop(base.APP.app_id, None)  # Safely pop the session if it's there.
+
+    if app is None:
+        app = asfquart.APP
+
+    quart.session.pop(app.app_id, None)  # Safely pop the session if it's there.

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-
 sys.path.extend(
     (
         "src",
@@ -9,12 +8,14 @@ sys.path.extend(
     )
 )  # Depending on where unit tests are run from, path may differ
 
-import pytest
 import time
+
+import pytest
 import quart
-import asfquart
 import asfquart.auth
 from asfquart.auth import Requirements as R
+
+APP = asfquart.APP
 
 
 @pytest.mark.asyncio
@@ -35,7 +36,7 @@ async def test_auth_basics():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session, should work.
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
     await requires_session()
 
     # Test with a bad requirement, should fail with a TypeError.
@@ -69,14 +70,14 @@ async def test_mfa_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session without MFA, should fail.
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
     try:
         await requires_mfa()
     except asfquart.auth.AuthenticationFailed as e:
         assert e.message is asfquart.auth.ErrorMessages.NO_MFA
 
     # Test with session with MFA, should work.
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
     await requires_mfa()
 
 
@@ -111,7 +112,7 @@ async def test_role_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session , should work
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
     await test_committer_auth()
 
     # Test with a role we don't have, should fail
@@ -121,16 +122,16 @@ async def test_role_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_MEMBER
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
     try:
         await test_member_and_chair_auth()
     except asfquart.auth.AuthenticationFailed as e:
         assert e.message is asfquart.auth.ErrorMessages.NOT_CHAIR
 
     # Test for either member of chair, should work as we have chair (but not member)
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
     await test_member_or_chair_auth()
 
     # Test for both member and chair, when we are both. should work.
-    quart.session = {asfquart.APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
+    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
     await test_member_and_chair_auth()
