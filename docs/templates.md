@@ -14,7 +14,7 @@ APP = asfquart.APP
 
 T_EXAMPLE = APP.load_template(APP.app_dir / 'templates/example.ezt')
 
-@APP.use_template(T_EXAMPLE):
+@APP.use_template(T_EXAMPLE)
 async def page_example():
     data = {
         'title': 'Example page',
