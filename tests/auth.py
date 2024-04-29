@@ -12,16 +12,15 @@ import time
 
 import pytest
 import quart
+
 import asfquart.auth
 from asfquart.auth import Requirements as R
-
-APP = asfquart.APP
 
 
 @pytest.mark.asyncio
 @pytest.mark.auth
 async def test_auth_basics():
-    asfquart.construct("foobar")
+    app = asfquart.construct("foobar")
 
     # Generic auth test, just requires a valid session
     @asfquart.auth.require
@@ -36,7 +35,7 @@ async def test_auth_basics():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session, should work.
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
     await requires_session()
 
     # Test with a bad requirement, should fail with a TypeError.
@@ -56,7 +55,7 @@ async def test_auth_basics():
 async def test_mfa_auth():
     """MFA tests"""
 
-    asfquart.construct("foobar")
+    app = asfquart.construct("foobar")
 
     @asfquart.auth.require(R.mfa_enabled)
     async def requires_mfa():
@@ -70,14 +69,14 @@ async def test_mfa_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session without MFA, should fail.
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
     try:
         await requires_mfa()
     except asfquart.auth.AuthenticationFailed as e:
         assert e.message is asfquart.auth.ErrorMessages.NO_MFA
 
     # Test with session with MFA, should work.
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
     await requires_mfa()
 
 
@@ -85,7 +84,8 @@ async def test_mfa_auth():
 @pytest.mark.auth
 async def test_role_auth():
     """Role tests"""
-    asfquart.construct("foobar")
+
+    app = asfquart.construct("foobar")
 
     # Set up some role tests
     @asfquart.auth.require  # no args implies any valid account
@@ -112,7 +112,7 @@ async def test_role_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
 
     # Test with session , should work
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
     await test_committer_auth()
 
     # Test with a role we don't have, should fail
@@ -122,16 +122,16 @@ async def test_role_auth():
         assert e.message is asfquart.auth.ErrorMessages.NOT_MEMBER
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
     try:
         await test_member_and_chair_auth()
     except asfquart.auth.AuthenticationFailed as e:
         assert e.message is asfquart.auth.ErrorMessages.NOT_CHAIR
 
     # Test for either member of chair, should work as we have chair (but not member)
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
     await test_member_or_chair_auth()
 
     # Test for both member and chair, when we are both. should work.
-    quart.session = {APP.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
+    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
     await test_member_and_chair_auth()
