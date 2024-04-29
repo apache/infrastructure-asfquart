@@ -1,4 +1,4 @@
-# Bootstrapping *asfquart*
+# Bootstrapping asfquart
 
 ## Constructing the base quart app
 
