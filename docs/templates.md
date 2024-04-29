@@ -12,7 +12,7 @@ used as the page response for the route/endpoint.
 import asfquart
 APP = asfquart.APP
 
-T_EXAMPLE = APP.load_template(APP.app_dir / 'templates/example.ezt')
+T_EXAMPLE = APP.load_template('templates/example.ezt')
 
 @APP.use_template(T_EXAMPLE)
 async def page_example():
@@ -22,3 +22,10 @@ async def page_example():
         }
     return data
 ~~~
+
+The `APP.load_template()` method will install a "watcher" on the source
+file. Should it change, the template will be automatically reloaded
+immediately. Its next rendering will use the changes, and no application
+restart is necessary.
+
+`load_template()` takes a path relative to `APP.app_dir` or an absolute path.
