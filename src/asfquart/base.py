@@ -27,8 +27,10 @@ import logging
 import functools
 import signal
 
+import asfpy.twatcher
 import quart
 import hypercorn.utils
+import ezt
 
 import __main__
 
@@ -58,6 +60,13 @@ class QuartApp(quart.Quart):
         ### construct() function pass the app_dir?
         self.app_dir = pathlib.Path(__main__.__file__).parent
         self.app_id = app_id
+
+        # Most apps will require a watcher for their EZT templates.
+        self.tw = asfpy.twatcher.TemplateWatcher()
+
+        @self.before_serving
+        async def watch_templates():
+            self.add_background_task(self.tw.watch_forever)
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
@@ -184,6 +193,11 @@ class QuartApp(quart.Quart):
             finally:
                 asyncio.set_event_loop(None)
                 loop.close()
+
+    def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
+        # Use str() to avoid passing Path instances.
+        return self.tw.load_template(str(self.app_dir / tpath),
+                                     base_format=base_format)
 
 
 def construct(name, *args, **kw):
