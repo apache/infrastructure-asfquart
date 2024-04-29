@@ -1,6 +1,6 @@
 # Simplified EZT templating
 
-*asfquart* has built-in decorators to apply an EZT template to a route/handler
+**asfquart** has built-in decorators to apply an EZT template to a route/handler
 to generate an HTML response page from a "data dictionary".
 
 EZT will take a template, and a data dictionary as inputs/value for that
