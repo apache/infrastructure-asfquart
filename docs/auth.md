@@ -17,22 +17,25 @@ The example below shows how to cordon off specific end-points to certain groups 
 ~~~python
 import asfquart
 from asfquart.auth import Requirements as R
+APP = asfquart.APP
  
 # URL that requires some sort of ASF auth (oauth, ldap)
-@asfquart.app.route("/foo")
+@APP.route("/foo")
 @asfquart.auth.require  # Bare decorator means just require a valid session
 async def view_that_requires_auth():
    pass
  
 # URL that requires 2FA (implies oauth since ldap doesn't have 2fa)
-@asfquart.app.route("/foo2fa")
+@APP.route("/foo2fa")
 @asfquart.auth.require({R.mfa_enabled})
 async def view_that_requires_2fa_auth():
    pass
  
 # URL that requires a certain org role (2FA implied??)
-@asfquart.app.route("/foorole")
+@APP.route("/foorole")
 @asfquart.auth.require({R.member})
 async def view_that_requires_member_role():
    pass
+~~~
+
 ~~~
