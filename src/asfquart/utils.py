@@ -4,11 +4,13 @@
 import os.path
 import io
 import functools
+import asyncio
 
 import quart
 import werkzeug.routing
 
 DEFAULT_MAX_CONTENT_LENGTH = 102400
+
 
 async def formdata():
     """Catch-all form data converter. Converts form data of any form (json, urlencoded, mime, etc) to a dict"""
@@ -99,3 +101,27 @@ def render(t, data):
     buf = io.StringIO()
     t.generate(buf, data)
     return buf.getvalue()
+
+
+class CancellableTask:
+    "Wrapper for a task that does not propagate its cancellation."
+
+    def __init__(self, coro, *, loop=None, name=None):
+        "Create a task for CORO in LOOP, named NAME."
+
+        if loop is None:
+            loop = asyncio.get_event_loop()
+
+        async def absorb_cancel():
+            try:
+                await coro
+            except asyncio.CancelledError:
+                print('TASK CANCELLED:', self.task)
+                pass
+
+        self.task = loop.create_task(absorb_cancel(), name=name)
+
+    def cancel(self):
+        "Cancel the task, and clean up its CancelledError exception."
+
+        self.task.cancel()
