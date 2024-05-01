@@ -69,7 +69,8 @@ class QuartApp(quart.Quart):
         # later cancellation at shutdown time.
         @self.before_serving
         async def begin_watching():
-            ctask = utils.CancellableTask(self.tw.watch_forever())
+            ctask = utils.CancellableTask(self.tw.watch_forever(),
+                                          name=f'TW:{app_id}')
             #print('STARTED:', ctask.task)
             self.background_tasks.add(ctask.task)
 
