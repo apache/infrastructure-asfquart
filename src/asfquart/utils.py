@@ -5,9 +5,12 @@ import os.path
 import io
 import functools
 import asyncio
+import logging
 
 import quart
 import werkzeug.routing
+
+LOGGER = logging.getLogger(__name__)
 
 DEFAULT_MAX_CONTENT_LENGTH = 102400
 
@@ -116,8 +119,7 @@ class CancellableTask:
             try:
                 await coro
             except asyncio.CancelledError:
-                print('TASK CANCELLED:', self.task)
-                pass
+                LOGGER.debug(f'TASK CANCELLED: {self.task}')
 
         self.task = loop.create_task(absorb_cancel(), name=name)
 
