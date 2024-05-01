@@ -33,6 +33,7 @@ import hypercorn.utils
 import ezt
 
 import __main__
+from . import utils
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,9 +65,18 @@ class QuartApp(quart.Quart):
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
 
+        # Start a task to watch the templates, and hold onto it for
+        # later cancellation at shutdown time.
         @self.before_serving
-        async def watch_templates():
-            self.add_background_task(self.tw.watch_forever)
+        async def begin_watching():
+            ctask = utils.CancellableTask(self.tw.watch_forever())
+            #print('STARTED:', ctask.task)
+            self.background_tasks.add(ctask.task)
+
+            @self.after_serving
+            async def stop_watching():
+                #print('STOPPING:', ctask.task)
+                ctask.cancel()
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
@@ -163,17 +173,21 @@ class QuartApp(quart.Quart):
                 LOGGER.info('SHUTDOWN: Performing graceful exit...')
                 raise
 
-        # Normally, for the SHUTDOWN_TRIGGER, it simply completes and returns.
-        # We are gathering two tasks, so a completion will not happen. Thus,
-        # each task must raise an exception to make the next step happen.
-        # MustReloadError (from our file watcher) or ShutdownError (thrown by
-        # raise_shutdown() when the event gets set).
+        # Normally, for the SHUTDOWN_TRIGGER, it simply completes and
+        # returns (eg. waiting on an event) as it gets wrapped into
+        # hypercorn.utils.raise_shutdown() to raise ShutdownError.
+        #
+        # We are gathering two tasks, each running forever until its
+        # condition raises an exception.
+        #
+        # .watch() will raise MustReloadError
+        # shutdown() will raise ShutdownError
         t1 = loop.create_task(QuartApp.watch(extra_files))
         t2 = loop.create_task(shutdown())
 
-        async def gather():
+        async def gather_conditions():
             await asyncio.gather(t1, t2)
-        return gather
+        return gather_conditions  # factory to create an awaitable (coro)
 
     @staticmethod
     async def watch(extra_files):
