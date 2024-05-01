@@ -39,8 +39,6 @@ from . import utils
 
 LOGGER = logging.getLogger(__name__)
 
-loop = asyncio.get_event_loop()
-
 
 class ASFQuartException(Exception):
     """Global ASFQuart exception with a message and an error code, for the HTTP response."""
