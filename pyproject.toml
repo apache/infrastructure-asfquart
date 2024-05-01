@@ -17,6 +17,7 @@ dependencies = [
     "pytest-mock>=3.10.0",
     "quart>=0.19.4",
     "ezt",
+    "asyncinotify",
 ]
 license = {file = "LICENSE"}
 readme = "README.md"

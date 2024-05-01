@@ -19,6 +19,7 @@ name for this (and internally Quart calls this .import_name), it can
 be anything and the .name property treats it as arbitrary.
 """
 
+import sys
 import asyncio
 import pathlib
 import secrets
@@ -31,6 +32,7 @@ import asfpy.twatcher
 import quart
 import hypercorn.utils
 import ezt
+import asyncinotify
 
 import __main__
 from . import utils
@@ -192,9 +194,26 @@ class QuartApp(quart.Quart):
 
     @staticmethod
     async def watch(extra_files):
-        ### for now, just use the standard observer. It loops forever, or
-        ### raises MustReloadError if a change is detected.
-        await hypercorn.utils.observe_changes(asyncio.sleep)
+        "Watch all known .py files, plus some extra files (eg. configs)."
+
+        py_files = set(getattr(m, '__file__', None)
+                       for m in sys.modules.values())
+        py_files.remove(None)  # the built-in modules
+
+        inotify = asyncinotify.Inotify()
+        for path in py_files | extra_files:
+            inotify.add_watch(path,
+                              asyncinotify.Mask.MODIFY         # file is modified
+                              | asyncinotify.Mask.DELETE_SELF  # file was deleted
+                              | asyncinotify.Mask.MOVE_SELF    # file moved away
+                              | asyncinotify.Mask.MASK_ADD     # add all above to any existing watches
+                              )
+
+        with inotify:
+            async for event in inotify:
+                LOGGER.info(f'File changed: {event.path}')
+                raise hypercorn.utils.MustReloadError
+        # NOTREACHED
 
     @staticmethod
     def run_forever(loop, task):
