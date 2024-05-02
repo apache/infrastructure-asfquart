@@ -84,6 +84,7 @@ class QuartApp(quart.Quart):
         # encryption, but will fall back to a new secret if we
         # cannot write a permanent token to disk...with a warning!
         _token_filename = self.app_dir / "apptoken.txt"
+
         if os.path.isfile(_token_filename):  # Token file exists, try to read it
             self.secret_key = open(_token_filename).read()
         else:  # No token file yet, try to write, warn if we cannot
@@ -91,8 +92,11 @@ class QuartApp(quart.Quart):
             ### TBD: throw the PermissionError once we stabilize how to locate
             ### the APP directory (which can be thrown off during testing)
             try:
-                with open(_token_filename, "w") as f:
-                    f.write(self.secret_key)
+                # New secrets files should be created with chmod 600, to ensure that only
+                # the app has access to them. For existing (or modified) secrets, we will
+                # keep permissions as is for now. TODO: Perhaps warn about file permissions?
+                fd = os.open(path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=0o600)
+                open(fd, "w").write(self.secret_key)
             except PermissionError:
                 LOGGER.error(
                     f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
