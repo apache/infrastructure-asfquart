@@ -167,35 +167,45 @@ class QuartApp(quart.Quart):
         to reload the application.
         """
 
-        event = asyncio.Event()
+        # Note: Quart.run() allows for optional signal handlers. We do not.
 
-        def _signal_handler(*_) -> None:
-            event.set()
-
-        # Note: Quart.run() allows for this to be skipped. We do not.
-        loop.add_signal_handler(signal.SIGTERM, _signal_handler)
-        loop.add_signal_handler(signal.SIGINT, _signal_handler)
-
-        async def shutdown():
+        shutdown_event = asyncio.Event()
+        def _shutdown_handler(*_) -> None:
+            shutdown_event.set()
+        loop.add_signal_handler(signal.SIGTERM, _shutdown_handler)
+        loop.add_signal_handler(signal.SIGINT, _shutdown_handler)
+        async def shutdown_wait():
             "Log a nice message when we're signalled to shut down."
-            await event.wait()
+            await shutdown_event.wait()
             LOGGER.info('SHUTDOWN: Performing graceful exit...')
             raise hypercorn.utils.ShutdownError()
+
+        restart_event = asyncio.Event()
+        def _restart_handler(*_) -> None:
+            restart_event.set()
+        loop.add_signal_handler(signal.SIGUSR2, _restart_handler)
+        async def restart_wait():
+            "Log a nice message when we're signalled to restart."
+            await restart_event.wait()
+            LOGGER.info('RESTART: Performing process restart...')
+            raise hypercorn.utils.MustReloadError()
 
         # Normally, for the SHUTDOWN_TRIGGER, it simply completes and
         # returns (eg. waiting on an event) as it gets wrapped into
         # hypercorn.utils.raise_shutdown() to raise ShutdownError.
         #
-        # We are gathering two tasks, each running forever until its
+        # We are gathering three tasks, each running forever until its
         # condition raises an exception.
         #
         # .watch() will raise MustReloadError
-        # shutdown() will raise ShutdownError
+        # shutdown_wait() will raise ShutdownError
+        # restart_wait() will raise MustReloadError
         t1 = loop.create_task(QuartApp.watch(extra_files))
-        t2 = loop.create_task(shutdown())
+        t2 = loop.create_task(shutdown_wait())
+        t3 = loop.create_task(restart_wait())
 
         async def gather_conditions():
-            await asyncio.gather(t1, t2)
+            await asyncio.gather(t1, t2, t3)
 
         return gather_conditions  # factory to create an awaitable (coro)
 
