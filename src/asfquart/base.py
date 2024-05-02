@@ -92,7 +92,7 @@ class QuartApp(quart.Quart):
             file_mode = st.st_mode & 0o777
             if file_mode != SECRETS_FILE_MODE:
                 sys.stderr.write(
-                    f"WARNING: Secrets file {_token_filename} has file mode {file_mode}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
+                    f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
                 )
             self.secret_key = open(_token_filename).read()
         else:  # No token file yet, try to write, warn if we cannot
