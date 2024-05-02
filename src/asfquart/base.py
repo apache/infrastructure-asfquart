@@ -178,11 +178,9 @@ class QuartApp(quart.Quart):
 
         async def shutdown():
             "Log a nice message when we're signalled to shut down."
-            try:
-                await hypercorn.utils.raise_shutdown(event.wait)
-            except hypercorn.utils.ShutdownError:
-                LOGGER.info("SHUTDOWN: Performing graceful exit...")
-                raise
+            await event.wait()
+            LOGGER.info('SHUTDOWN: Performing graceful exit...')
+            raise hypercorn.utils.ShutdownError()
 
         # Normally, for the SHUTDOWN_TRIGGER, it simply completes and
         # returns (eg. waiting on an event) as it gets wrapped into
