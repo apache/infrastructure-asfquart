@@ -38,7 +38,7 @@ import __main__
 from . import utils
 
 LOGGER = logging.getLogger(__name__)
-
+SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
 
 class ASFQuartException(Exception):
     """Global ASFQuart exception with a message and an error code, for the HTTP response."""
@@ -86,6 +86,11 @@ class QuartApp(quart.Quart):
         _token_filename = self.app_dir / "apptoken.txt"
 
         if os.path.isfile(_token_filename):  # Token file exists, try to read it
+            # Test that permissions are as we want them, warn if not, but continue
+            st = os.stat(_token_filename)
+            file_mode = st.st_mode & 0o777
+            if file_mode != SECRETS_FILE_MODE:
+                sys.stderr.write(f"WARNING: Secrets file {_token_filename} has file mode {file_mode}, we were expecting {oct(SECRETS_FILE_MODE)}\n")
             self.secret_key = open(_token_filename).read()
         else:  # No token file yet, try to write, warn if we cannot
             self.secret_key = secrets.token_hex()
@@ -95,7 +100,7 @@ class QuartApp(quart.Quart):
                 # New secrets files should be created with chmod 600, to ensure that only
                 # the app has access to them. For existing (or modified) secrets, we will
                 # keep permissions as is for now. TODO: Perhaps warn about file permissions?
-                fd = os.open(path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=0o600)
+                fd = os.open(path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE)
                 open(fd, "w").write(self.secret_key)
             except PermissionError:
                 LOGGER.error(
