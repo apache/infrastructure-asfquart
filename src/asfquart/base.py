@@ -40,8 +40,10 @@ from . import utils
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
 
+
 class ASFQuartException(Exception):
     """Global ASFQuart exception with a message and an error code, for the HTTP response."""
+
     def __init__(self, message: str = "An error occurred", errorcode: int = 500):
         self.message = message
         self.errorcode = errorcode
@@ -69,14 +71,13 @@ class QuartApp(quart.Quart):
         # later cancellation at shutdown time.
         @self.before_serving
         async def begin_watching():
-            ctask = utils.CancellableTask(self.tw.watch_forever(),
-                                          name=f'TW:{app_id}')
-            #print('STARTED:', ctask.task)
+            ctask = utils.CancellableTask(self.tw.watch_forever(), name=f"TW:{app_id}")
+            # print('STARTED:', ctask.task)
             self.background_tasks.add(ctask.task)
 
             @self.after_serving
             async def stop_watching():
-                #print('STOPPING:', ctask.task)
+                # print('STOPPING:', ctask.task)
                 ctask.cancel()
 
         # Read, or set and write, the application secret token for
@@ -90,7 +91,9 @@ class QuartApp(quart.Quart):
             st = os.stat(_token_filename)
             file_mode = st.st_mode & 0o777
             if file_mode != SECRETS_FILE_MODE:
-                sys.stderr.write(f"WARNING: Secrets file {_token_filename} has file mode {file_mode}, we were expecting {oct(SECRETS_FILE_MODE)}\n")
+                sys.stderr.write(
+                    f"WARNING: Secrets file {_token_filename} has file mode {file_mode}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
+                )
             self.secret_key = open(_token_filename).read()
         else:  # No token file yet, try to write, warn if we cannot
             self.secret_key = secrets.token_hex()
@@ -100,19 +103,14 @@ class QuartApp(quart.Quart):
                 # New secrets files should be created with chmod 600, to ensure that only
                 # the app has access to them. For existing (or modified) secrets, we will
                 # keep permissions as is for now. TODO: Perhaps warn about file permissions?
-                fd = os.open(path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE)
+                fd = os.open(
+                    path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE
+                )
                 open(fd, "w").write(self.secret_key)
             except PermissionError:
-                LOGGER.error(
-                    f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
-                )
+                LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
-    def runx(self, /,
-             host='0.0.0.0',
-             debug=True,
-             loop=None,
-             extra_files=set(),  # order does not matter
-             **kw):
+    def runx(self, /, host="0.0.0.0", debug=True, loop=None, extra_files=set(), **kw):  # order does not matter
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -122,7 +120,7 @@ class QuartApp(quart.Quart):
         watched for changes. If a change occurs, the app will be reloaded.
         """
 
-        port = kw.pop('port', None)
+        port = kw.pop("port", None)
         assert port, "The port must be specified."
 
         # NOTE: much of the code below is direct from quart/app.py:Quart.run()
@@ -138,17 +136,20 @@ class QuartApp(quart.Quart):
         trigger = self.factory_trigger(loop, extra_files)
 
         # Construct a task to run the app.
-        task = self.run_task(host, port, debug,
-                             use_reloader=False,  # avoid the builtin reloader
-                             shutdown_trigger=trigger,
-                             )
+        task = self.run_task(
+            host,
+            port,
+            debug,
+            use_reloader=False,  # avoid the builtin reloader
+            shutdown_trigger=trigger,
+        )
 
         ### LOG/print some info about the app starting?
         print(f' * Serving Quart app "{self.app_id}"')
-        print(f' * Debug mode: {self.debug}')
-        print(f' * Using reloader: CUSTOM')
-        print(f' * Running on http://{host}:{port}')
-        print(f' * ... CTRL + C to quit')
+        print(f" * Debug mode: {self.debug}")
+        print(f" * Using reloader: CUSTOM")
+        print(f" * Running on http://{host}:{port}")
+        print(f" * ... CTRL + C to quit")
 
         # Ready! Start running the app.
         self.run_forever(loop, task)
@@ -180,7 +181,7 @@ class QuartApp(quart.Quart):
             try:
                 await hypercorn.utils.raise_shutdown(event.wait)
             except hypercorn.utils.ShutdownError:
-                LOGGER.info('SHUTDOWN: Performing graceful exit...')
+                LOGGER.info("SHUTDOWN: Performing graceful exit...")
                 raise
 
         # Normally, for the SHUTDOWN_TRIGGER, it simply completes and
@@ -197,28 +198,29 @@ class QuartApp(quart.Quart):
 
         async def gather_conditions():
             await asyncio.gather(t1, t2)
+
         return gather_conditions  # factory to create an awaitable (coro)
 
     @staticmethod
     async def watch(extra_files):
         "Watch all known .py files, plus some extra files (eg. configs)."
 
-        py_files = set(getattr(m, '__file__', None)
-                       for m in sys.modules.values())
+        py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
         py_files.remove(None)  # the built-in modules
 
         inotify = asyncinotify.Inotify()
         for path in py_files | extra_files:
-            inotify.add_watch(path,
-                              asyncinotify.Mask.MODIFY         # file is modified
-                              | asyncinotify.Mask.DELETE_SELF  # file was deleted
-                              | asyncinotify.Mask.MOVE_SELF    # file moved away
-                              | asyncinotify.Mask.MASK_ADD     # add all above to any existing watches
-                              )
+            inotify.add_watch(
+                path,
+                asyncinotify.Mask.MODIFY  # file is modified
+                | asyncinotify.Mask.DELETE_SELF  # file was deleted
+                | asyncinotify.Mask.MOVE_SELF  # file moved away
+                | asyncinotify.Mask.MASK_ADD,  # add all above to any existing watches
+            )
 
         with inotify:
             async for event in inotify:
-                LOGGER.info(f'File changed: {event.path}')
+                LOGGER.info(f"File changed: {event.path}")
                 raise hypercorn.utils.MustReloadError
         # NOTREACHED
 
@@ -237,8 +239,7 @@ class QuartApp(quart.Quart):
 
     def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
         # Use str() to avoid passing Path instances.
-        return self.tw.load_template(str(self.app_dir / tpath),
-                                     base_format=base_format)
+        return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
 
 
 def construct(name, *args, **kw):
@@ -265,11 +266,13 @@ def construct(name, *args, **kw):
 
     # Provide our standard filename argument converter.
     import asfquart.utils
-    app.url_map.converters['filename'] = asfquart.utils.FilenameConverter
+
+    app.url_map.converters["filename"] = asfquart.utils.FilenameConverter
 
     # Set up oauth and login redirects if needed
     if setup_oauth:
         import asfquart.generics
+
         # Figure out the OAuth URI we want to use.
         oauth_uri = setup_oauth if isinstance(setup_oauth, str) else asfquart.generics.DEFAULT_OAUTH_URI
         asfquart.generics.setup_oauth(app, uri=oauth_uri)
