@@ -66,19 +66,7 @@ class QuartApp(quart.Quart):
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
-
-        # Start a task to watch the templates, and hold onto it for
-        # later cancellation at shutdown time.
-        @self.while_serving
-        async def perform_watching():
-            ctask = utils.CancellableTask(self.tw.watch_forever(), name=f"TW:{app_id}")
-            #print('TW STARTED:', ctask.task)
-            self.background_tasks.add(ctask.task)
-
-            yield  # back to serving
-
-            #print('TW STOPPING:', ctask.task)
-            ctask.cancel()
+        self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
@@ -248,6 +236,20 @@ class QuartApp(quart.Quart):
     def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
+
+    def add_runner(self, func, name=None):
+        "Add a long-running task, with cancellation/cleanup."
+
+        @self.while_serving
+        async def perform_runner():
+            ctask = utils.CancellableTask(func(), name=name)
+            #print('RUNNER STARTED:', ctask.task)
+            self.background_tasks.add(ctask.task)
+
+            yield  # back to serving
+
+            #print('RUNNER STOPPING:', ctask.task)
+            ctask.cancel()
 
 
 def construct(name, *args, **kw):
