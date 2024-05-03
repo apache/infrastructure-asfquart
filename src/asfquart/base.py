@@ -69,16 +69,16 @@ class QuartApp(quart.Quart):
 
         # Start a task to watch the templates, and hold onto it for
         # later cancellation at shutdown time.
-        @self.before_serving
-        async def begin_watching():
+        @self.while_serving
+        async def perform_watching():
             ctask = utils.CancellableTask(self.tw.watch_forever(), name=f"TW:{app_id}")
-            # print('STARTED:', ctask.task)
+            #print('TW STARTED:', ctask.task)
             self.background_tasks.add(ctask.task)
 
-            @self.after_serving
-            async def stop_watching():
-                # print('STOPPING:', ctask.task)
-                ctask.cancel()
+            yield  # back to serving
+
+            #print('TW STOPPING:', ctask.task)
+            ctask.cancel()
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
