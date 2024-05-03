@@ -110,7 +110,11 @@ class QuartApp(quart.Quart):
             except PermissionError:
                 LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
-    def runx(self, /, host="0.0.0.0", debug=True, loop=None, extra_files=set(), **kw):  # order does not matter
+    def runx(self, /,
+             host="0.0.0.0", port=None,
+             debug=True, loop=None,
+             extra_files=set(),
+             **kw):
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -120,7 +124,7 @@ class QuartApp(quart.Quart):
         watched for changes. If a change occurs, the app will be reloaded.
         """
 
-        port = kw.pop("port", None)
+        # Default PORT is None, but it must be explicitly specified.
         assert port, "The port must be specified."
 
         # NOTE: much of the code below is direct from quart/app.py:Quart.run()
