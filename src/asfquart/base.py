@@ -58,10 +58,13 @@ class QuartApp(quart.Quart):
 
         # Locate the app dir as best we can. This is used for app ID
         # and token filepath generation
-        ### is __main__ module good, and is the __file__ attribute
-        ### always present? Do we need some fixes here. Should the
-        ### construct() function pass the app_dir?
-        self.app_dir = pathlib.Path(__main__.__file__).parent
+        # TODO: hypercorn does not have a __file__ variable available, 
+        # so we are forced to fall back to CWD. Maybe have an optional arg
+        # for setting the app dir?
+        if hasattr(__main__, "__file__"):
+          self.app_dir = pathlib.Path(__main__.__file__).parent
+        else:  # No __file__, probably hypercorn, fall back to cwd for now
+          self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
 
         # Most apps will require a watcher for their EZT templates.
