@@ -12,6 +12,9 @@ At present, asfquart features the following restrictive decorators:
 - `asfquart.auth.Requirements.chair`: User must be a chair or one or more projects
 - `asfquart.auth.Requirements.mfa_enabled`: User must be logged in using a method that requires multi-factor authentication
 
+By default, requirements are implictly in the `all_of` category, meaning they are AND'ed together.
+You can also OR requirements by using the `any_of` flag instead.
+
 The example below shows how to cordon off specific end-points to certain groups of users:
 
 ~~~python
@@ -36,6 +39,11 @@ async def view_that_requires_2fa_auth():
 @asfquart.auth.require({R.member})
 async def view_that_requires_member_role():
    pass
-~~~
+
+# URL that needs at least one of multiple requirements, using the any_of directive
+@APP.route("/multirole")
+@asfquart.auth.require(any_of={R.member, R.chair})  # Either chair or member (or both) required
+async def view_that_requires_some_role():
+   pass
 
 ~~~
