@@ -54,8 +54,8 @@ class FilenameConverter(werkzeug.routing.BaseConverter):
     regex = r"^[^/.]*(\.[A-Za-z0-9]+)?$"
     part_isolating = False
 
-    def to_python(self, filename):
-        return os.path.splitext(filename)
+    def to_python(self, filename): # pylint: disable=arguments-renamed
+        return os.path.splitext(filename) # superclass function uses 'value'
 
 
 #

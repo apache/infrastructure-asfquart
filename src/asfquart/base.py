@@ -25,7 +25,6 @@ import pathlib
 import secrets
 import os
 import logging
-import functools
 import signal
 
 import asfpy.twatcher
@@ -58,13 +57,13 @@ class QuartApp(quart.Quart):
 
         # Locate the app dir as best we can. This is used for app ID
         # and token filepath generation
-        # TODO: hypercorn does not have a __file__ variable available, 
+        # TODO: hypercorn does not have a __file__ variable available,
         # so we are forced to fall back to CWD. Maybe have an optional arg
         # for setting the app dir?
         if hasattr(__main__, "__file__"):
-          self.app_dir = pathlib.Path(__main__.__file__).parent
+            self.app_dir = pathlib.Path(__main__.__file__).parent
         else:  # No __file__, probably hypercorn, fall back to cwd for now
-          self.app_dir = pathlib.Path(os.getcwd())
+            self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
 
         # Most apps will require a watcher for their EZT templates.
@@ -153,9 +152,9 @@ class QuartApp(quart.Quart):
         ### LOG/print some info about the app starting?
         print(f' * Serving Quart app "{self.app_id}"')
         print(f" * Debug mode: {self.debug}")
-        print(f" * Using reloader: CUSTOM")
+        print(" * Using reloader: CUSTOM")
         print(f" * Running on http://{host}:{port}")
-        print(f" * ... CTRL + C to quit")
+        print(" * ... CTRL + C to quit")
 
         # Ready! Start running the app.
         self.run_forever(loop, task)
@@ -250,7 +249,7 @@ class QuartApp(quart.Quart):
             loop.run_until_complete(task)
         finally:
             try:
-                quart.app._cancel_all_tasks(loop)
+                quart.app._cancel_all_tasks(loop) # pylint: disable=protected-access
                 loop.run_until_complete(loop.shutdown_asyncgens())
             finally:
                 asyncio.set_event_loop(None)
@@ -260,7 +259,7 @@ class QuartApp(quart.Quart):
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
 
-    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):
+    def use_template(self, path_or_T, _base_format=ezt.FORMAT_HTML):
         # Decorator to use a template, specified by path or provided.
 
         if isinstance(path_or_T, ezt.Template):
@@ -286,7 +285,7 @@ def construct(name, *args, **kw):
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
         # If an error is thrown before the request body has been consumed, eat it quietly.
-        if not quart.request.body._complete.is_set():
+        if not quart.request.body._complete.is_set():  # pylint: disable=protected-access
             async for _data in quart.request.body:
                 pass
         return quart.Response(status=error.errorcode, response=error.message)

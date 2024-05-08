@@ -22,7 +22,7 @@ try:
 except ModuleNotFoundError:
     LDAP_SUPPORTED = False
 
-LDAP_CACHE = {}  # Temporary one-hour cache to speed up lookups.
+LDAP_CACHE: dict[str, list] = {}  # Temporary one-hour cache to speed up lookups.
 
 
 class LDAPClient:
