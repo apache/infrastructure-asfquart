@@ -147,7 +147,6 @@ class QuartApp(quart.Quart):
             host,
             port,
             debug,
-            use_reloader=False,  # avoid the builtin reloader
             shutdown_trigger=trigger,
         )
 
@@ -242,6 +241,11 @@ class QuartApp(quart.Quart):
     @staticmethod
     def run_forever(loop, task):
         "Run the application until exit, then cleanly shut down."
+
+        # Note: this logic is close to quart/app.py but we do not
+        # handle reload/restart here. That is handled by hypercorn
+        # in the task created by .run_task() (with exceptions thrown
+        # by our complex trigger).
         try:
             loop.run_until_complete(task)
         finally:
