@@ -115,7 +115,7 @@ class QuartApp(quart.Quart):
     def runx(self, /,
              host="0.0.0.0", port=None,
              debug=True, loop=None,
-             extra_files=set(),
+             extra_files=None,
              **kw):
         """Extended version of Quart.run()
 
@@ -128,6 +128,9 @@ class QuartApp(quart.Quart):
 
         # Default PORT is None, but it must be explicitly specified.
         assert port, "The port must be specified."
+
+        if extra_files is None: # mutable default parameters are unsafe, because they are instantiated once only
+            extra_files=set()
 
         # NOTE: much of the code below is direct from quart/app.py:Quart.run()
         # This local "copy" is to deal with the custom watcher/reloader.
