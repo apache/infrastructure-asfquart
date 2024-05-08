@@ -43,9 +43,10 @@ async def test_auth_basics():
         @asfquart.auth.require({R.member, print})
         async def requires_bad_thing():
             pass
-        # Same bad one, but with explicit any_of
+    # Same bad one, but with explicit any_of
+    with pytest.raises(TypeError):
         @asfquart.auth.require(any_of={R.member, print})
-        async def requires_bad_thing():
+        async def requires_bad_thingy():
             pass
 
 

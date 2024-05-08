@@ -58,10 +58,13 @@ class QuartApp(quart.Quart):
 
         # Locate the app dir as best we can. This is used for app ID
         # and token filepath generation
-        ### is __main__ module good, and is the __file__ attribute
-        ### always present? Do we need some fixes here. Should the
-        ### construct() function pass the app_dir?
-        self.app_dir = pathlib.Path(__main__.__file__).parent
+        # TODO: hypercorn does not have a __file__ variable available, 
+        # so we are forced to fall back to CWD. Maybe have an optional arg
+        # for setting the app dir?
+        if hasattr(__main__, "__file__"):
+          self.app_dir = pathlib.Path(__main__.__file__).parent
+        else:  # No __file__, probably hypercorn, fall back to cwd for now
+          self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
 
         # Most apps will require a watcher for their EZT templates.
@@ -98,7 +101,11 @@ class QuartApp(quart.Quart):
             except PermissionError:
                 LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
-    def runx(self, /, host="0.0.0.0", debug=True, loop=None, extra_files=set(), **kw):  # order does not matter
+    def runx(self, /,
+             host="0.0.0.0", port=None,
+             debug=True, loop=None,
+             extra_files=set(),
+             **kw):
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -108,7 +115,7 @@ class QuartApp(quart.Quart):
         watched for changes. If a change occurs, the app will be reloaded.
         """
 
-        port = kw.pop("port", None)
+        # Default PORT is None, but it must be explicitly specified.
         assert port, "The port must be specified."
 
         # NOTE: much of the code below is direct from quart/app.py:Quart.run()
@@ -128,7 +135,6 @@ class QuartApp(quart.Quart):
             host,
             port,
             debug,
-            use_reloader=False,  # avoid the builtin reloader
             shutdown_trigger=trigger,
         )
 
@@ -223,6 +229,11 @@ class QuartApp(quart.Quart):
     @staticmethod
     def run_forever(loop, task):
         "Run the application until exit, then cleanly shut down."
+
+        # Note: this logic is close to quart/app.py but we do not
+        # handle reload/restart here. That is handled by hypercorn
+        # in the task created by .run_task() (with exceptions thrown
+        # by our complex trigger).
         try:
             loop.run_until_complete(task)
         finally:
@@ -236,6 +247,14 @@ class QuartApp(quart.Quart):
     def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
+
+    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):
+        # Decorator to use a template, specified by path or provided.
+
+        if isinstance(path_or_T, ezt.Template):
+            return utils.use_template(path_or_T)
+
+        return utils.use_template(self.load_template(path_or_T))
 
     def add_runner(self, func, name=None):
         "Add a long-running task, with cancellation/cleanup."
