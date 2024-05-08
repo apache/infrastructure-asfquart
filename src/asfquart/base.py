@@ -115,7 +115,7 @@ class QuartApp(quart.Quart):
     def runx(self, /,
              host="0.0.0.0", port=None,
              debug=True, loop=None,
-             extra_files=set(),
+             extra_files=frozenset(), # OK, because immutable
              **kw):
         """Extended version of Quart.run()
 
