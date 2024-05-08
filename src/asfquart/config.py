@@ -11,7 +11,8 @@ DEFAULT_CONFIG_FILENAME = "config.yaml"
 
 async def _read_config(callback, config_filename):
     """Reads a YAML configuration and passes it to the callback"""
-    config_as_dict = yaml.safe_load(open(config_filename))
+    with open(config_filename, encoding='utf-8') as r:
+        config_as_dict = yaml.safe_load(r)
     # Some configuration routines may require os to block while the configuration is applied, so
     # we will accept both sync and async callbacks.
     # If the callback is async, await it...

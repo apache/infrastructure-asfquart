@@ -96,7 +96,8 @@ class QuartApp(quart.Quart):
                 sys.stderr.write(
                     f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
                 )
-            self.secret_key = open(_token_filename).read()
+            with open(_token_filename, encoding='utf-8') as r:
+                self.secret_key = r.read()
         else:  # No token file yet, try to write, warn if we cannot
             self.secret_key = secrets.token_hex()
             ### TBD: throw the PermissionError once we stabilize how to locate
@@ -108,7 +109,8 @@ class QuartApp(quart.Quart):
                 fd = os.open(
                     path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE
                 )
-                open(fd, "w").write(self.secret_key)
+                with open(fd, "w", encoding='utf-8') as w:
+                    w.write(self.secret_key)
             except PermissionError:
                 LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
