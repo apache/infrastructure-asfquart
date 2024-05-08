@@ -259,13 +259,13 @@ class QuartApp(quart.Quart):
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
 
-    def use_template(self, path_or_T, _base_format=ezt.FORMAT_HTML):
+    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):
         # Decorator to use a template, specified by path or provided.
 
         if isinstance(path_or_T, ezt.Template):
             return utils.use_template(path_or_T)
 
-        return utils.use_template(self.load_template(path_or_T))
+        return utils.use_template(self.load_template(path_or_T, base_format))
 
 
 def construct(name, *args, **kw):
