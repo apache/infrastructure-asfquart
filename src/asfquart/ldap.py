@@ -46,7 +46,7 @@ class LDAPClient:
                 async with self.client.connect() as conn:
                     rv = await conn.search(all_projects, attrs)
                     if not rv:
-                        raise Exception("Empty result set returned by LDAP")
+                        raise Exception("Empty result set returned by LDAP") # pylint: disable=broad-exception-raised
                     for project in rv:
                         if "dn" in project and any(xattr in project for xattr in attrs):
                             dn_match = GROUP_RE.match(str(project["dn"]))
@@ -59,7 +59,7 @@ class LDAPClient:
             return LDAP_CACHE[self.userid][1]
 
         except bonsai.errors.AuthenticationError as e:
-            raise base.ASFQuartException("Invalid credentials provided", errorcode=403)
+            raise base.ASFQuartException(f"Invalid credentials provided: {e}", errorcode=403)
         except Exception as e:
             print(f"Base exception during LDAP lookup: {e}")
             raise base.ASFQuartException(

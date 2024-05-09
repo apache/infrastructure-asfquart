@@ -100,13 +100,13 @@ class QuartApp(quart.Quart):
                 with open(fd, "w", encoding='utf-8') as w:
                     w.write(self.secret_key)
             except PermissionError:
-                LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
+                LOGGER.error("Could not open %s for writing. Session permanence cannot be guaranteed!", _token_filename)
 
     def runx(self, /,
              host="0.0.0.0", port=None,
              debug=True, loop=None,
              extra_files=frozenset(), # OK, because immutable
-             **kw):
+             **_kw):
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -223,7 +223,7 @@ class QuartApp(quart.Quart):
 
         with inotify:
             async for event in inotify:
-                LOGGER.info(f"File changed: {event.path}")
+                LOGGER.info("File changed: %s", event.path)
                 raise hypercorn.utils.MustReloadError
         # NOTREACHED
 
