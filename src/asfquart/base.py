@@ -148,8 +148,7 @@ class QuartApp(quart.Quart):
         self.run_forever(loop, task)
         # Being here, means graceful exit.
 
-    @staticmethod
-    def factory_trigger(loop, extra_files):
+    def factory_trigger(self, loop, extra_files):
         """Factory for an AWAITABLE that handles special exceptions.
 
         The LOOP normally ignores all signals. This method will make the
@@ -171,6 +170,7 @@ class QuartApp(quart.Quart):
             "Log a nice message when we're signalled to shut down."
             await shutdown_event.wait()
             LOGGER.info('SHUTDOWN: Performing graceful exit...')
+            gathered.cancel()
             raise hypercorn.utils.ShutdownError()
 
         restart_event = asyncio.Event()
@@ -181,7 +181,8 @@ class QuartApp(quart.Quart):
             "Log a nice message when we're signalled to restart."
             await restart_event.wait()
             LOGGER.info('RESTART: Performing process restart...')
-            raise hypercorn.utils.MustReloadError()
+            gathered.cancel()
+            raise quart.utils.MustReloadError()
 
         # Normally, for the SHUTDOWN_TRIGGER, it simply completes and
         # returns (eg. waiting on an event) as it gets wrapped into
@@ -193,14 +194,22 @@ class QuartApp(quart.Quart):
         # .watch() will raise MustReloadError
         # shutdown_wait() will raise ShutdownError
         # restart_wait() will raise MustReloadError
-        t1 = loop.create_task(QuartApp.watch(extra_files))
-        t2 = loop.create_task(shutdown_wait())
-        t3 = loop.create_task(restart_wait())
-
+        t1 = loop.create_task(QuartApp.watch(extra_files),
+                              name=f'Watch:{self.app_id}')
+        t2 = loop.create_task(shutdown_wait(),
+                              name=f'Shutdown:{self.app_id}')
+        t3 = loop.create_task(restart_wait(),
+                              name=f'Restart:{self.app_id}')
+        aw = asyncio.gather(t1, t2, t3)
         async def gather_conditions():
             await asyncio.gather(t1, t2, t3)
 
-        return gather_conditions  # factory to create an awaitable (coro)
+        gathered = utils.CancellableTask(aw, loop=loop,
+                                         name=f'Trigger:{self.app_id}')
+        async def await_gathered():
+            await gathered.task
+
+        return await_gathered  # factory to create an awaitable (coro)
 
     @staticmethod
     async def watch(extra_files):
@@ -222,7 +231,7 @@ class QuartApp(quart.Quart):
         with inotify:
             async for event in inotify:
                 LOGGER.info(f"File changed: {event.path}")
-                raise hypercorn.utils.MustReloadError
+                raise quart.utils.MustReloadError
         # NOTREACHED
 
     @staticmethod
