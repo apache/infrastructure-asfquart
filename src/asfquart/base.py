@@ -28,13 +28,23 @@ import logging
 import signal
 
 import asfpy.twatcher
-import quart
+import quart  # implies .app and .utils
 import hypercorn.utils
 import ezt
 import asyncinotify
 
 import __main__
 from . import utils
+
+try:
+    ExceptionGroup
+except NameError:
+    # This version does not have an ExceptionGroup (introduced in
+    # Python 3.11). We'll just create a new subclass of Exception,
+    # knowing that nothing will throw it, so an except statement
+    # with this will not be satisified (ie. acts as a no-op).
+    class ExceptionGroup(Exception):
+        pass
 
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
@@ -238,12 +248,16 @@ class QuartApp(quart.Quart):
     def run_forever(loop, task):
         "Run the application until exit, then cleanly shut down."
 
-        # Note: this logic is close to quart/app.py but we do not
-        # handle reload/restart here. That is handled by hypercorn
-        # in the task created by .run_task() (with exceptions thrown
-        # by our complex trigger).
+        # Note: this logic is copied from quart/app.py
+        reload_ = False
         try:
             loop.run_until_complete(task)
+        except quart.utils.MustReloadError:
+            reload_ = True
+            LOGGER.debug('FOUND: MustReloadError')
+        except ExceptionGroup as e:
+            reload_ = (e.subgroup(quart.utils.MustReloadError) is not None)
+            LOGGER.debug(f'FOUND: ExceptionGroup, reload_={reload_}')
         finally:
             try:
                 quart.app._cancel_all_tasks(loop) # pylint: disable=protected-access
@@ -251,6 +265,8 @@ class QuartApp(quart.Quart):
             finally:
                 asyncio.set_event_loop(None)
                 loop.close()
+        if reload_:
+            quart.utils.restart()
 
     def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
         # Use str() to avoid passing Path instances.
