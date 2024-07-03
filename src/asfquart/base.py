@@ -283,6 +283,30 @@ class QuartApp(quart.Quart):
     def add_runner(self, func, name=None):
         "Add a long-running task, with cancellation/cleanup."
 
+        # NOTES:
+        #
+        # We take advantage of the WHILE_SERVING mechanism that uses a
+        # generator to manage the lifecycle of a task. We create/schedule
+        # a task when the app starts up, then yield back to the framework.
+        # Control returns when the app is shutting down, and we can cleanly
+        # cancel the long-running task.
+        #
+        # Contrast this with APP.background_tasks. Each task placed into
+        # that set must monitor APP.shutdown_event to know when the task
+        # should exit (or an external mechanism observing that event must
+        # cancel the task). The coordination becomes more difficult, and
+        # must be handled by the application logic. The WHILE_SERVING
+        # mechanism used here places no demands upon the caller to manage
+        # the lifecycle of the long-running task.
+        #
+        # Further note: should a task be placed into APP.background_tasks,
+        # it will be waited on to exit at shutdown time. If the task is
+        # not watching APP.shutdown_event, and does not complete, finish,
+        # or cancel within a timeout period (default is 5 seconds), then
+        # that background task is canceled. That is an unstructured
+        # completion/cancellation mechanism and introduces a delay during
+        # the shutdown process.
+
         @self.while_serving
         async def perform_runner():
             ctask = utils.CancellableTask(func(), name=name)
