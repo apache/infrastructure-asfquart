@@ -287,7 +287,6 @@ class QuartApp(quart.Quart):
         async def perform_runner():
             ctask = utils.CancellableTask(func(), name=name)
             #print('RUNNER STARTED:', ctask.task)
-            self.background_tasks.add(ctask.task)
 
             yield  # back to serving
 
