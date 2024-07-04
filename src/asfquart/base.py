@@ -211,8 +211,6 @@ class QuartApp(quart.Quart):
         t3 = loop.create_task(restart_wait(),
                               name=f'Restart:{self.app_id}')
         aw = asyncio.gather(t1, t2, t3)
-        async def gather_conditions():
-            await asyncio.gather(t1, t2, t3)
 
         gathered = utils.CancellableTask(aw, loop=loop,
                                          name=f'Trigger:{self.app_id}')
