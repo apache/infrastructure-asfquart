@@ -39,6 +39,23 @@ class Requirements:
         # Anything but True will cause a failure.
         return client_session.isChair is True, ErrorMessages.NOT_CHAIR
 
+    @staticmethod
+    def root(client_session: session.ClientSession):
+        """tests for whether the user is a member of infra-root"""
+        # Anything but True will cause a failure.
+        return False
+
+    @staticmethod
+    def pmc_member(client_session: session.ClientSession):
+        """tests for whether the user is a PMC member of any top-level project"""
+        # Anything but True will cause a failure.
+        return False
+
+    @staticmethod
+    def roleacct(client_session: session.ClientSession):
+        """tests for whether the user is a service account"""
+        # Anything but True will cause a failure.
+        return False
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
