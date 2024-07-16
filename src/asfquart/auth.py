@@ -43,13 +43,13 @@ class Requirements:
     def root(client_session: session.ClientSession):
         """tests for whether the user is a member of infra-root"""
         # Anything but True will cause a failure.
-        return False
+        return client_session.isRoot is True, ErrorMessages.NOT_ROOT
 
     @staticmethod
     def pmc_member(client_session: session.ClientSession):
         """tests for whether the user is a PMC member of any top-level project"""
         # Anything but True will cause a failure.
-        return False
+        return bool(client_session.committees), ErrorMessages.NOT_PMC    
 
     @staticmethod
     def roleacct(client_session: session.ClientSession):
