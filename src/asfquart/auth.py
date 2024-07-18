@@ -16,6 +16,7 @@ class Requirements:
     E_NO_MFA = "This endpoint requires you to log on using multi-factor authentication."
     E_NOT_ROOT = "This endpoint is only accessible to foundation staff."
     E_NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
+    E_NOT_ROLEACCOUNT = "This endpoint is only accessible to role accounts."
     
 
     @classmethod
@@ -56,7 +57,7 @@ class Requirements:
     def roleacct(cls, client_session: session.ClientSession):
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
-        return False
+        return False, cls.E_NOT_ROLEACCOUNT
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
