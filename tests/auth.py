@@ -32,7 +32,7 @@ async def test_auth_basics():
     try:
         await requires_session()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
+        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session, should work.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
@@ -67,14 +67,14 @@ async def test_mfa_auth():
     try:
         await requires_mfa()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
+        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session without MFA, should fail.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
     try:
         await requires_mfa()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NO_MFA
+        assert e.message is R.E_NO_MFA
 
     # Test with session with MFA, should work.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
@@ -110,7 +110,7 @@ async def test_role_auth():
     try:
         await test_committer_auth()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NOT_LOGGED_IN
+        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session , should work
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
@@ -120,14 +120,14 @@ async def test_role_auth():
     try:
         await test_member_auth()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NOT_MEMBER
+        assert e.message is R.E_NOT_MEMBER
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
     try:
         await test_member_and_chair_auth()
     except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is asfquart.auth.ErrorMessages.NOT_CHAIR
+        assert e.message is R.E_NOT_CHAIR
 
     # Test for either member of chair, should work as we have chair (but not member)
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
