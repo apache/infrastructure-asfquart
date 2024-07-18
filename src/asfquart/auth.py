@@ -6,58 +6,58 @@ import typing
 import asyncio
 import collections.abc
 
-
-class ErrorMessages:
-    NOT_LOGGED_IN = "You need to be logged in to access this endpoint."
-    NOT_MEMBER = "This endpoint is only accessible to foundation members."
-    NOT_CHAIR = "This endpoint is only accessible to project chairs."
-    NO_MFA = "This endpoint requires you to log on using multi-factor authentication."
-    NOT_ROOT = "This endpoint is only accessible to foundation staff."
-    NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
-
-
 class Requirements:
     """Various pre-defined access requirements"""
 
-    @staticmethod
-    def mfa_enabled(client_session: session.ClientSession):
+    # Error messages related to tests
+    E_NOT_LOGGED_IN = "You need to be logged in to access this endpoint."
+    E_NOT_MEMBER = "This endpoint is only accessible to foundation members."
+    E_NOT_CHAIR = "This endpoint is only accessible to project chairs."
+    E_NO_MFA = "This endpoint requires you to log on using multi-factor authentication."
+    E_NOT_ROOT = "This endpoint is only accessible to foundation staff."
+    E_NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
+    E_NOT_ROLEACCOUNT = "This endpoint is only accessible to role accounts."
+    
+
+    @classmethod
+    def mfa_enabled(cls, client_session: session.ClientSession):
         """Tests for MFA enabled in the client session"""
-        return isinstance(client_session, session.ClientSession) and client_session.mfa is True, ErrorMessages.NO_MFA
+        return isinstance(client_session, session.ClientSession) and client_session.mfa is True, cls.E_NO_MFA
 
-    @staticmethod
-    def committer(client_session: session.ClientSession):
+    @classmethod
+    def committer(cls, client_session: session.ClientSession):
         """Tests for whether the user is a committer on any project"""
-        return isinstance(client_session, session.ClientSession), ErrorMessages.NOT_LOGGED_IN
+        return isinstance(client_session, session.ClientSession), cls.E_NOT_LOGGED_IN
 
-    @staticmethod
-    def member(client_session: session.ClientSession):
+    @classmethod
+    def member(cls, client_session: session.ClientSession):
         """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
-        return client_session.isMember is True, ErrorMessages.NOT_MEMBER
+        return client_session.isMember is True, cls.E_NOT_MEMBER
 
-    @staticmethod
-    def chair(client_session: session.ClientSession):
+    @classmethod
+    def chair(cls, client_session: session.ClientSession):
         """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
-        return client_session.isChair is True, ErrorMessages.NOT_CHAIR
+        return client_session.isChair is True, cls.E_NOT_CHAIR
 
-    @staticmethod
-    def root(client_session: session.ClientSession):
+    @classmethod
+    def root(cls, client_session: session.ClientSession):
         """tests for whether the user is a member of infra-root"""
         # Anything but True will cause a failure.
-        return client_session.isRoot is True, ErrorMessages.NOT_ROOT
+        return client_session.isRoot is True, cls.E_NOT_ROOT
 
-    @staticmethod
-    def pmc_member(client_session: session.ClientSession):
+    @classmethod
+    def pmc_member(cls, client_session: session.ClientSession):
         """tests for whether the user is a PMC member of any top-level project"""
         # Anything but True will cause a failure.
-        return bool(client_session.committees), ErrorMessages.NOT_PMC    
+        return bool(client_session.committees), cls.E_NOT_PMC    
 
-    @staticmethod
-    def roleacct(client_session: session.ClientSession):
+    @classmethod
+    def roleacct(cls, client_session: session.ClientSession):
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
-        return False
+        return False, cls.E_NOT_ROLEACCOUNT
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
@@ -114,7 +114,7 @@ def require(
         errors_list = []
         # First off, test if we have a session at all.
         if not isinstance(client_session, dict):
-            raise AuthenticationFailed(ErrorMessages.NOT_LOGGED_IN)
+            raise AuthenticationFailed(Requirements.E_NOT_LOGGED_IN)
 
         # Test all_of
         all_of_set = requirements_to_iter(all_of)
