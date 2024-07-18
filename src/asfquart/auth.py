@@ -114,7 +114,7 @@ def require(
         errors_list = []
         # First off, test if we have a session at all.
         if not isinstance(client_session, dict):
-            raise AuthenticationFailed(ErrorMessages.NOT_LOGGED_IN)
+            raise AuthenticationFailed(R.E_NOT_LOGGED_IN)
 
         # Test all_of
         all_of_set = requirements_to_iter(all_of)
