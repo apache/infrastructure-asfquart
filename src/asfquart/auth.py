@@ -12,6 +12,8 @@ class ErrorMessages:
     NOT_MEMBER = "This endpoint is only accessible to foundation members."
     NOT_CHAIR = "This endpoint is only accessible to project chairs."
     NO_MFA = "This endpoint requires you to log on using multi-factor authentication."
+    NOT_ROOT = "This endpoint is only accessible to foundation staff."
+    NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
 
 
 class Requirements:
