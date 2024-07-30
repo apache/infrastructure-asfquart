@@ -18,6 +18,7 @@ dependencies = [
     "quart>=0.19.4",
     "ezt",
     "asyncinotify",
+    "easydict",
 ]
 license = {file = "LICENSE"}
 readme = "README.md"

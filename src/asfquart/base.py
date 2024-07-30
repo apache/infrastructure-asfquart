@@ -32,6 +32,8 @@ import quart  # implies .app and .utils
 import hypercorn.utils
 import ezt
 import asyncinotify
+import easydict
+import yaml
 
 import __main__
 from . import utils
@@ -79,6 +81,9 @@ class QuartApp(quart.Quart):
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
         self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
+
+        # use an easydict for config values
+        self.cfg = easydict.EasyDict()
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
@@ -328,6 +333,9 @@ def construct(name, *args, **kw):
     # Note: order is important, as we want the .pop() to always execute.
     force_auth_redirect = kw.pop("force_login", True) and setup_oauth
 
+    # check if a path to a config file is given, otherwise default to config.yaml
+    cfg_path = kw.pop("cfg_path", "config.yaml")
+
     app = QuartApp(name, *args, **kw)
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
@@ -337,6 +345,9 @@ def construct(name, *args, **kw):
             async for _data in quart.request.body:
                 pass
         return quart.Response(status=error.errorcode, response=error.message)
+
+    # load the config information from cfg_path
+    app.cfg.update(yaml.safe_load(open(cfg_path)))
 
     # Provide our standard filename argument converter.
     import asfquart.utils
