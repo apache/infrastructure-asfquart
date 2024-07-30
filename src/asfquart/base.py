@@ -337,9 +337,6 @@ def construct(name, *args, **kw):
     # Note: order is important, as we want the .pop() to always execute.
     force_auth_redirect = kw.pop("force_login", True) and setup_oauth
 
-    # check if a path to a config file is given, otherwise default to config.yaml
-    cfg_path = kw.pop("cfg_path", "config.yaml")
-
     app = QuartApp(name, *args, **kw)
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
