@@ -50,6 +50,7 @@ except NameError:
 
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
+CONFIG_FNAME = 'config.yaml'
 
 
 class ASFQuartException(Exception):
@@ -77,6 +78,9 @@ class QuartApp(quart.Quart):
         else:  # No __file__, probably hypercorn, fall back to cwd for now
             self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
+
+        # check if a path to a config file is given, otherwise default to CONFIG_FNAME
+        self.cfg_path = app.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
