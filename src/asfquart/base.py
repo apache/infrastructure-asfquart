@@ -350,8 +350,9 @@ def construct(name, *args, **kw):
                 pass
         return quart.Response(status=error.errorcode, response=error.message)
 
-    # load the config information from cfg_path
-    app.cfg.update(yaml.safe_load(open(cfg_path)))
+    # try to load the config information from app.cfg_path
+    if os.path.isfile(app.cfg_path):
+        app.cfg.update(yaml.safe_load(open(cfg_path)))
 
     # Provide our standard filename argument converter.
     import asfquart.utils
