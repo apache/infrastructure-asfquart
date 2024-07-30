@@ -235,8 +235,13 @@ class QuartApp(quart.Quart):
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
         py_files.remove(None)  # the built-in modules
 
+        if os.path.isfile(self.cfg_path):
+            cfg_files = set(self.cfg_path)
+        else:
+            cfg_files = set(None)
+
         inotify = asyncinotify.Inotify()
-        for path in py_files | extra_files:
+        for path in py_files | cfg_files | extra_files:
             inotify.add_watch(
                 path,
                 asyncinotify.Mask.MODIFY  # file is modified
