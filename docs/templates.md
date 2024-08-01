@@ -34,7 +34,7 @@ or an absolute path.
 
 There are many times when a template might be shared across several routes.
 In such a scenario, the usage demonstrated above will load the template several
-times and the watcher will overwrite itself. Theoretically. This untested.
+times and the watcher will overwrite itself. Theoretically. This is as yet untested.
 And it should not be a problem. So they say.
 
 The preferred approach is to load the template once, register it for watching,
