@@ -80,7 +80,7 @@ class QuartApp(quart.Quart):
         self.app_id = app_id
 
         # check if a path to a config file is given, otherwise default to CONFIG_FNAME
-        self.cfg_path = app.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
+        self.cfg_path = self.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
