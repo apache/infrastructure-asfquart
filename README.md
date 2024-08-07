@@ -10,18 +10,18 @@
 
 ~~~python
 import asfquart
-import asfquart.auth
+from asfquart.auth import Requirements as R
 
 def my_app():
     # Construct the quart service. By default, the oauth gateway is enabled at /oauth.
-    asfquart.construct("my_app_service")
+    app = asfquart.construct("my_app_service")
 
-    @asfquart.APP.route("/")
+    @app.route("/")
     async def homepage():
         return "Hello!"
 
-    @asfquart.APP.route("/secret")
-    @asfquart.auth.require(asfquart.auth.Requirements.committer)
+    @app.route("/secret")
+    @asfquart.auth.require(R.committer)
     async def secret_page():
       return "Secret stuff!"
     
