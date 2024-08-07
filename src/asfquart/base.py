@@ -236,9 +236,9 @@ class QuartApp(quart.Quart):
         py_files.remove(None)  # the built-in modules
 
         if os.path.isfile(self.cfg_path):
-            cfg_files = set(self.cfg_path)
+            cfg_files = { self.cfg_path }
         else:
-            cfg_files = set(None)
+            cfg_files = set()
 
         inotify = asyncinotify.Inotify()
         for path in py_files | cfg_files | extra_files:
