@@ -15,5 +15,6 @@ hypercorn = "*"
 build = "*"
 twine = "*"
 "asfpy[aioldap]" = "*"
+easydict = "*"
 
 [dev-packages]

@@ -32,6 +32,8 @@ import quart  # implies .app and .utils
 import hypercorn.utils
 import ezt
 import asyncinotify
+import easydict
+import yaml
 
 import __main__
 from . import utils
@@ -48,6 +50,7 @@ except NameError:
 
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
+CONFIG_FNAME = 'config.yaml'
 
 
 class ASFQuartException(Exception):
@@ -76,9 +79,15 @@ class QuartApp(quart.Quart):
             self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
 
+        # check if a path to a config file is given, otherwise default to CONFIG_FNAME
+        self.cfg_path = self.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
+
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
         self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
+
+        # use an easydict for config values
+        self.cfg = easydict.EasyDict()
 
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
@@ -226,8 +235,13 @@ class QuartApp(quart.Quart):
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
         py_files.remove(None)  # the built-in modules
 
+        if os.path.isfile(self.cfg_path):
+            cfg_files = set(self.cfg_path)
+        else:
+            cfg_files = set(None)
+
         inotify = asyncinotify.Inotify()
-        for path in py_files | extra_files:
+        for path in py_files | cfg_files | extra_files:
             inotify.add_watch(
                 path,
                 asyncinotify.Mask.MODIFY  # file is modified
@@ -337,6 +351,10 @@ def construct(name, *args, **kw):
             async for _data in quart.request.body:
                 pass
         return quart.Response(status=error.errorcode, response=error.message)
+
+    # try to load the config information from app.cfg_path
+    if os.path.isfile(app.cfg_path):
+        app.cfg.update(yaml.safe_load(open(cfg_path)))
 
     # Provide our standard filename argument converter.
     import asfquart.utils

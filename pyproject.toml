@@ -22,6 +22,7 @@ quart = "^0.19.4"
 ezt = "~1.1"
 asyncinotify = "^4.0.9"
 asfpy = "~0.52"
+easydict = "~1.13"
 
 [build-system]
 requires = ["poetry-core"]
