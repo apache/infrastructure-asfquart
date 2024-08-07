@@ -1,26 +1,8 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
-[project]
+[tool.poetry]
 name = "asfquart"
 version = "0.1.5"
-authors = [ 
-  {name = "ASF Infrastructure", email = "users@infra.apache.org"}
-]
-dependencies = [
-    "aiohttp>=3.9.2",
-    "PyYAML>=6.0.1",
-    "pytest==7.2.0",
-    "pytest-cov>=4.0.0",
-    "pytest-asyncio>=0.20.3",
-    "pytest-mock>=3.10.0",
-    "quart>=0.19.4",
-    "ezt",
-    "asyncinotify",
-    "easydict",
-]
-license = {file = "LICENSE"}
+authors = ["ASF Infrastructure <users@infra.apache.org>"]
+license = "Apache-2.0"
 readme = "README.md"
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
@@ -28,7 +10,20 @@ classifiers = [
 ]
 description = "ASF Quart Framework"
 
-[project.optional-dependencies]
-ldap = [
-    "asfpy[aioldap]"
-]
+[tool.poetry.dependencies]
+python = "~3.10"
+aiohttp = "^3.9.2"
+PyYAML = "^6.0.1"
+pytest = "7.2.0"
+pytest-cov = "^4.0.0"
+pytest-asyncio = "^0.20.3"
+pytest-mock = "^3.10.0"
+quart = "^0.19.4"
+ezt = "~1.1"
+asyncinotify = "^4.0.9"
+asfpy = "~0.52"
+easydict = "~1.13"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

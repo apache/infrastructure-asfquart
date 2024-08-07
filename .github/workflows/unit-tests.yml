@@ -16,15 +16,14 @@ jobs:
       with:
         fetch-depth: 0 # need all versions to be able to access server tree commit logs
         persist-credentials: false
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+    - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        sudo apt -y install python3-dev libldap2-dev libsasl2-dev
-        python3 -m pip install --upgrade pipenv wheel
-        pipenv install
+        packages: python3-dev libldap2-dev libsasl2-dev
+        version: 1.0
+    - name: Setup Python, Poetry, and pips
+      uses: packetcoders/action-setup-cache-python-poetry@v1.1.0
+      with:
+        python-version: ${{matrix.python-version}}
     - name: Test with pytest
       run: |
-        pipenv run python3 -m pytest tests/*.py
+        poetry run python3 -m pytest tests/*.py
