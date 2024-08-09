@@ -10,3 +10,7 @@ __pycache__
 
 # Test files
 apptoken.txt
+
+# virtualenvs
+.venv
+poetry.lock
