@@ -352,7 +352,7 @@ def construct(name, *args, **kw):
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
-        app.cfg.update(yaml.safe_load(open(cfg_path)))
+        app.cfg.update(yaml.safe_load(open(app.cfg_path)))
 
     # Provide our standard filename argument converter.
     import asfquart.utils
