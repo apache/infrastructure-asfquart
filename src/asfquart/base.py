@@ -213,7 +213,7 @@ class QuartApp(quart.Quart):
         # .watch() will raise MustReloadError
         # shutdown_wait() will raise ShutdownError
         # restart_wait() will raise MustReloadError
-        t1 = loop.create_task(QuartApp.watch(extra_files),
+        t1 = loop.create_task(self.watch(extra_files),
                               name=f'Watch:{self.app_id}')
         t2 = loop.create_task(shutdown_wait(),
                               name=f'Shutdown:{self.app_id}')
@@ -228,8 +228,7 @@ class QuartApp(quart.Quart):
 
         return await_gathered  # factory to create an awaitable (coro)
 
-    @staticmethod
-    async def watch(extra_files):
+    async def watch(self, extra_files):
         "Watch all known .py files, plus some extra files (eg. configs)."
 
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
