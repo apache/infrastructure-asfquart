@@ -255,7 +255,7 @@ class QuartApp(quart.Quart):
                 raise quart.utils.MustReloadError
         # NOTREACHED
 
-    def run_forever(loop, task):
+    def run_forever(self, loop, task):
         "Run the application until exit, then cleanly shut down."
 
         # Note: this logic is copied from quart/app.py
