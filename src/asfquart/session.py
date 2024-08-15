@@ -62,11 +62,11 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
                     if app.token_handler:
                         if callable(app.token_handler):
                             # Async token handler?
-                            if asyncio.iscoroutinefunction(token_handler):
-                                session_dict = await token_handler(quart.request.authorization.token)
+                            if asyncio.iscoroutinefunction(app.token_handler):
+                                session_dict = await app.token_handler(quart.request.authorization.token)
                             # Sync handler?
                             else:
-                                session_dict = token_handler(quart.request.authorization.token)
+                                session_dict = app.token_handler(quart.request.authorization.token)
                             # If token handler returns a dict, we have a session and should set it up
                             if session_dict:
                                 return ClientSession(session_dict)
