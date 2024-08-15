@@ -61,6 +61,7 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
                 case "bearer":  # Role accounts, PATs - TBD
                     if app.token_handler:
                         assert callable(app.token_handler), "app.token_handler is not a callable function!"
+                        session_dict = None  # Blank, in case we don't have a working callback.
                         # Async token handler?
                         if asyncio.iscoroutinefunction(app.token_handler):
                             session_dict = await app.token_handler(quart.request.authorization.token)
