@@ -89,6 +89,9 @@ class QuartApp(quart.Quart):
         # use an easydict for config values
         self.cfg = easydict.EasyDict()
 
+        # token handler callback for PATs - see docs/sessions.md
+        self.token_handler = None  # Default to no PAT handler available.
+
         # Read, or set and write, the application secret token for
         # session encryption. We prefer permanence for the session
         # encryption, but will fall back to a new secret if we

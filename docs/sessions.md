@@ -35,7 +35,7 @@ async def token_handler(token):
          "roleaccount": True,  # For role accounts, this MUST be set to True, to distinguish from normal user PATs
          "committees": ["httpd", "tomcat",]  # random restriction in this example
       }
-asfquart.APP.cfg.token_handler = token_handler
+asfquart.APP.token_handler = token_handler
 ~~~
 
 This would enable the role account to be granted a session through the bearer auth header:
