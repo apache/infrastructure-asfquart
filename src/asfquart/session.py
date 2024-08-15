@@ -59,7 +59,22 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     elif bool(quart.request) and 'Authorization' in quart.request.headers:
         match quart.request.authorization.type:
                 case "bearer":  # Role accounts, PATs - TBD
-                    print(f"Debug: Do auth check for role with token {quart.request.authorization.token} here...")
+                    has_token_callback = False  # Track whether we have a PAT handler or not
+                    if app.cfg:
+                        token_handler = app.cfg.get("token_handler")
+                        if token_handler and callable(token_handler):
+                            has_token_callback = True
+                            # Async token handler?
+                            if asyncio.iscoroutinefunction(token_handler):
+                                session_dict = await token_handler(quart.request.authorization.token)
+                            # Sync handler?
+                            else:
+                                session_dict = token_handler(quart.request.authorization.token)
+                            # If token handler returns a dict, we have a session and should set it up
+                            if session_dict:
+                                return ClientSession(session_dict)
+                    if not has_token_callback:
+                        print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
                 case "basic":  # Basic LDAP auth - will need to grab info from LDAP
                     if ldap.LDAP_SUPPORTED:
                         try:
