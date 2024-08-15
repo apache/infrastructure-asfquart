@@ -60,18 +60,16 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
         match quart.request.authorization.type:
                 case "bearer":  # Role accounts, PATs - TBD
                     if app.token_handler:
-                        if callable(app.token_handler):
-                            # Async token handler?
-                            if asyncio.iscoroutinefunction(app.token_handler):
-                                session_dict = await app.token_handler(quart.request.authorization.token)
-                            # Sync handler?
-                            else:
-                                session_dict = app.token_handler(quart.request.authorization.token)
-                            # If token handler returns a dict, we have a session and should set it up
-                            if session_dict:
-                                return ClientSession(session_dict)
-                        else:
-                            print(f"Debug: PAT handler for token {quart.request.authorization.token} is not callable!")
+                        assert callable(app.token_handler), "app.token_handler is not a callable function!"
+                        # Async token handler?
+                        if asyncio.iscoroutinefunction(app.token_handler):
+                            session_dict = await app.token_handler(quart.request.authorization.token)
+                        # Sync handler?
+                        elif callable(app.token_handler):
+                            session_dict = app.token_handler(quart.request.authorization.token)
+                        # If token handler returns a dict, we have a session and should set it up
+                        if session_dict:
+                            return ClientSession(session_dict)
                     else:
                         print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
                 case "basic":  # Basic LDAP auth - will need to grab info from LDAP
