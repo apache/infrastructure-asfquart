@@ -115,7 +115,8 @@ class QuartApp(quart.Quart):
                 fd = os.open(
                     path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE
                 )
-                open(fd, "w").write(self.secret_key)
+                with open(fd, "w") as sfile:
+                    sfile.write(self.secret_key)
             except PermissionError:
                 LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
