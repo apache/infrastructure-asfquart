@@ -168,7 +168,7 @@ class QuartApp(quart.Quart):
         self.run_forever(loop, task)
         # Being here, means graceful exit.
 
-    def factory_trigger(self, loop, extra_files):
+    def factory_trigger(self, loop, extra_files=frozenset()):
         """Factory for an AWAITABLE that handles special exceptions.
 
         The LOOP normally ignores all signals. This method will make the
@@ -229,7 +229,7 @@ class QuartApp(quart.Quart):
 
         return await_gathered  # factory to create an awaitable (coro)
 
-    async def watch(self, extra_files):
+    async def watch(self, extra_files=frozenset()):
         "Watch all known .py files, plus some extra files (eg. configs)."
 
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
