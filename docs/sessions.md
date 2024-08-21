@@ -23,3 +23,24 @@ assert session, "No session found or session expired"  # If too old or not found
 ~~~
 
 
+## Role account management via declared PAT handler
+Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler 
+is declared:
+
+~~~python
+async def token_handler(token):
+   if token == "abcdefg":
+      return {
+         "uid": "roleaccountthing",
+         "roleaccount": True,  # For role accounts, this MUST be set to True, to distinguish from normal user PATs
+         "committees": ["httpd", "tomcat",]  # random restriction in this example
+      }
+asfquart.APP.token_handler = token_handler
+~~~
+
+This would enable the role account to be granted a session through the bearer auth header:
+
+~~~bash
+curl -H "Authorization: bearer abcdefg" https://foo.apache.org/some-endpoint
+~~~
+
