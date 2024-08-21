@@ -361,6 +361,11 @@ def construct(name, *args, **kw):
     # Provide our standard filename argument converter.
     import asfquart.utils
 
+    # Sane defaults for cookies: SameSite=Strict; Secure; HttpOnly
+    app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+
     app.url_map.converters["filename"] = asfquart.utils.FilenameConverter
 
     # Set up oauth and login redirects if needed
