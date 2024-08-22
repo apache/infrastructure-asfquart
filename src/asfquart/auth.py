@@ -57,7 +57,7 @@ class Requirements:
     def roleacct(cls, client_session: session.ClientSession):
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
-        return False, cls.E_NOT_ROLEACCOUNT
+        return client_session.isRole is True, cls.E_NOT_ROLEACCOUNT
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
