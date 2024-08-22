@@ -23,7 +23,7 @@ ezt = "~1.1"
 asyncinotify = "^4.0.9"
 asfpy = "~0.52"
 easydict = "~1.13"
-exceptiongroup
+exceptiongroup = { version = ">=1.1.0", python = "<3.11" }
 
 [build-system]
 requires = ["poetry-core"]
