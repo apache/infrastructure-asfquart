@@ -26,6 +26,7 @@ class ClientSession(dict):
         self.committees = raw_data.get("pmcs", [])
         self.projects = raw_data.get("projects", [])
         self.mfa = raw_data.get("mfa", False)
+        self.isRole = raw_data.get("roleaccount", False)
         # Update the external dict representation with internal values
         self.update(self.__dict__.items())
 
