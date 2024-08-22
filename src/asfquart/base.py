@@ -42,11 +42,13 @@ try:
     ExceptionGroup
 except NameError:
     # This version does not have an ExceptionGroup (introduced in
-    # Python 3.11). We'll just create a new subclass of Exception,
-    # knowing that nothing will throw it, so an except statement
-    # with this will not be satisified (ie. acts as a no-op).
-    class ExceptionGroup(Exception):
-        pass
+    # Python 3.11). Somebody (hypercorn) might be using a backport
+    # of it from the "exceptiongroup" package. We'll catch that
+    # instead. Note that packages designed for less than 3.11
+    # won't be throwing ExceptionGroup (of any form) at all, which
+    # means our catching it will be a no-op.
+    if sys.version_info < (3, 11):
+        from exceptiongroup import ExceptionGroup
 
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
