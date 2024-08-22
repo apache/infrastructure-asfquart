@@ -8,6 +8,7 @@ import binascii
 
 import quart.sessions
 import asfquart
+import asyncio
 
 
 class ClientSession(dict):
