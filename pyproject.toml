@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "asfquart"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["ASF Infrastructure <users@infra.apache.org>"]
 license = "Apache-2.0"
 readme = "README.md"
