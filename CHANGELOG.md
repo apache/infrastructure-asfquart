@@ -1,3 +1,9 @@
+Changes in 0.1.9:
+
+
+Changes in 0.1.8:
+- ?
+ 
 Changes in 0.1.7:
 - Fixed the PAT handler missing asyncio library import
 - auth.require can now require role account as a type
