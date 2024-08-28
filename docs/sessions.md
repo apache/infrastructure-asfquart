@@ -33,7 +33,10 @@ async def token_handler(token):
       return {
          "uid": "roleaccountthing",
          "roleaccount": True,  # For role accounts, this MUST be set to True, to distinguish from normal user PATs
-         "committees": ["httpd", "tomcat",]  # random restriction in this example
+         "committees": ["httpd", "tomcat",],  # random restriction in this example
+         "metadata": {  # the optional metadata dict can be used to manage/log whatever internal information you wish
+             "scope": ["scopeA", "scopeB"],  # For instance, you can log which scopes this token can be used within
+         },
       }
 asfquart.APP.token_handler = token_handler
 ~~~
@@ -43,4 +46,24 @@ This would enable the role account to be granted a session through the bearer au
 ~~~bash
 curl -H "Authorization: bearer abcdefg" https://foo.apache.org/some-endpoint
 ~~~
+
+## Using scopes for tokens
+If the application makes use of scopes to limit what an access token can do, you can note these scopes inside the 
+`metadata` dictionary when constructing the session dict to return. The `metadata` dict can be used for whatever 
+information you wish to keep about a specific session, and is accessed through `session.metadata` when fetched via 
+the usual `session = await asfquart.session.read()` call. Thus, you can test your tokens at the endpoint:
+
+~~~python
+REQUIRED_SCOPE = "admin"  # some random scope required for this endpoint
+
+@app.route("/foo")
+@asfquart.auth.require  # Require a valid session, can be through a PAT
+async def endpoint():
+    # Get session
+    session = await asfquart.session.read()
+    # Ensure it has the right scope, or bail
+    if REQUIRED_SCOPE not in session.metadata.get("scope", []):
+        raise asfquart.auth.AuthenticationFailed("Your token does not have the required scope for this endpoint")
+    # No bail? scope must be proper, do the things..
+    do_scoped_stuff()
 
