@@ -24,6 +24,7 @@ import asyncio
 import pathlib
 import secrets
 import os
+import stat
 import logging
 import signal
 
@@ -51,7 +52,8 @@ except NameError:
         from exceptiongroup import ExceptionGroup
 
 LOGGER = logging.getLogger(__name__)
-SECRETS_FILE_MODE = 0o600  # Expected permissions for secrets file (r/w for app only)
+SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this user only
+SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
 CONFIG_FNAME = 'config.yaml'
 
 
@@ -115,11 +117,13 @@ class QuartApp(quart.Quart):
             ### the APP directory (which can be thrown off during testing)
             try:
                 # New secrets files should be created with chmod 600, to ensure that only
-                # the app has access to them. For existing (or modified) secrets, we will
-                # keep permissions as is for now. TODO: Perhaps warn about file permissions?
-                fd = os.open(
-                    path=_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_TRUNC), mode=SECRETS_FILE_MODE
-                )
+                # the app has access to them. umask is recorded and changed during this, to 
+                # ensure we don't have umask overriding what we want to achieve.
+                umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
+                try:
+                    fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
+                finally:
+                    os.umask(umask_original)  # reset umask to the original setting
                 with open(fd, "w") as sfile:
                     sfile.write(self.secret_key)
             except PermissionError:
