@@ -27,6 +27,7 @@ class ClientSession(dict):
         self.projects = raw_data.get("projects", [])
         self.mfa = raw_data.get("mfa", False)
         self.isRole = raw_data.get("roleaccount", False)
+        self.metadata = raw_data.get("metadata", {})  # This can contain whatever specific metadata the app needs
         # Update the external dict representation with internal values
         self.update(self.__dict__.items())
 
