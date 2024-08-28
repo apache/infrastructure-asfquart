@@ -1,5 +1,5 @@
 Changes in 0.1.9:
- - tbd
+ - added the `metadata` dict to session objects where apps can store session-specific instructions
 
 Changes in 0.1.8:
 - Improved compatibility with Hypercorn which uses a backport of ExceptionGroup
