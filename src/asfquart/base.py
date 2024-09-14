@@ -32,9 +32,9 @@ import asfpy.twatcher
 import quart  # implies .app and .utils
 import hypercorn.utils
 import ezt
-import asyncinotify
 import easydict
 import yaml
+import watchfiles
 
 import __main__
 from . import utils
@@ -252,20 +252,16 @@ class QuartApp(quart.Quart):
         else:
             cfg_files = set()
 
-        inotify = asyncinotify.Inotify()
-        for path in py_files | cfg_files | extra_files:
-            inotify.add_watch(
-                path,
-                asyncinotify.Mask.MODIFY  # file is modified
-                | asyncinotify.Mask.DELETE_SELF  # file was deleted
-                | asyncinotify.Mask.MOVE_SELF  # file moved away
-                | asyncinotify.Mask.MASK_ADD,  # add all above to any existing watches
-            )
+        watched_files = py_files | cfg_files | extra_files
 
-        with inotify:
-            async for event in inotify:
-                LOGGER.info(f"File changed: {event.path}")
-                raise quart.utils.MustReloadError
+        # quiet down the watchfiles logger
+        logging.getLogger('watchfiles.main').setLevel(logging.INFO)
+
+        async for changes in watchfiles.awatch(*watched_files):
+            for event in changes:
+                if (event[0] == watchfiles.Change.modified or event[0] == watchfiles.Change.deleted or event[0] == watchfiles.Change.added):
+                    LOGGER.info(f"File changed: {event[1]}")
+                    raise quart.utils.MustReloadError
         # NOTREACHED
 
     def run_forever(self, loop, task):
