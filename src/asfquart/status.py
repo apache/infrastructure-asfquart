@@ -9,6 +9,7 @@ import enum
 import easydict
 import asfpy.whoami
 import time
+import aiohttp
 
 # Default broadcast URL for health pushes
 DEFAULT_BROADCAST_URL = "https://infra-reports.apache.org/api/health"
@@ -102,6 +103,19 @@ class AppStatus:
         self.url = isinstance(app_url, str) and app_url or f"https://{self.hostname}/"
 
         self._status_checks = []
+
+    async def broadcast(self):
+        # If we recognize this host as an internal ASF host, send off a broadcast ping to IRD for monitoring
+        # TODO: Actually make the ping
+        if PERFORM_BROADCAST and False:  # This won't run yet!
+            ct = aiohttp.client.ClientTimeout(sock_read=15)
+            async with aiohttp.client.ClientSession(timeout=ct) as session:
+                # Send the ping to IRD, announcing where we think we are
+                _rv = await session.post(DEFAULT_BROADCAST_URL, data={
+                    "self": self.url,
+                    "host": HOSTNAME,
+                    "app": self.app.app_id,
+                })
 
     def add_status_check(self, function: callable, required=False):
         """Adds a new status check to the monitor. If `required` is True, this
