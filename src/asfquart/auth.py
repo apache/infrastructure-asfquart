@@ -59,6 +59,13 @@ class Requirements:
         # Anything but True will cause a failure.
         return client_session.isRole is True, cls.E_NOT_ROLEACCOUNT
 
+    @classmethod
+    def analytics(cls, client_session: session.ClientSession):
+        """tests for whether the user is an analytics service account, read-only access"""
+        # Anything but True will cause a failure.
+        return False, cls.E_NOT_ROLEACCOUNT
+
+
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
         self.message = message
