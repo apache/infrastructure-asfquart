@@ -78,28 +78,33 @@ confidence=
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
-disable=raw-checker-failed,
-        bad-inline-option,
-        locally-disabled,
-        file-ignored,
-        suppressed-message,
-        useless-suppression,
-        deprecated-pragma,
-        use-symbolic-message-instead,
+disable=
         attribute-defined-outside-init,
-        wrong-import-position,wrong-import-order,import-error,
+        bad-inline-option,
+        cyclic-import, # enable later
+        deprecated-pragma,
+        file-ignored,
+        fixme, # enable later
+        import-error,
         import-outside-toplevel,
         invalid-name,
+        line-too-long, # enable later?
+        locally-disabled,
+        missing-class-docstring, # Enable later?
+        missing-function-docstring, # Enable later?
+        missing-module-docstring, # Enable later?
+        no-member, # enable later
+        raw-checker-failed,
+        suppressed-message,
         too-few-public-methods,
+        too-many-arguments,
         too-many-instance-attributes,
         too-many-return-statements,
-        too-many-arguments,
         use-dict-literal,
-        no-member, # enable later
-        cyclic-import, # enable later
-        missing-function-docstring,missing-module-docstring,missing-class-docstring, # Enable later?
-        line-too-long, # enable later?
-        fixme, # enable later
+        use-symbolic-message-instead,
+        useless-suppression,
+        wrong-import-order, # Enable later?
+        wrong-import-position, # Enable later?
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
