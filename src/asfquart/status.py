@@ -130,5 +130,7 @@ class AppStatus:
         return status_check
 
     async def status_response(self):
-        """TBD: status as a json response...collate somehow"""
+        """TBD: status as a json response...collate somehow
+        Should we follow the application/health+json format? - https://inadarei.github.io/rfc-healthcheck/
+        """
         pass
