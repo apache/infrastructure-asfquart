@@ -109,13 +109,16 @@ class AppStatus:
         # TODO: Actually make the ping
         if PERFORM_BROADCAST and False:  # This won't run yet!
             ct = aiohttp.client.ClientTimeout(sock_read=15)
-            async with aiohttp.client.ClientSession(timeout=ct) as session:
-                # Send the ping to IRD, announcing where we think we are
-                _rv = await session.post(DEFAULT_BROADCAST_URL, data={
-                    "self": self.url,
-                    "host": HOSTNAME,
-                    "app": self.app.app_id,
-                })
+            try:
+                async with aiohttp.client.ClientSession(timeout=ct) as session:
+                    # Send the ping to IRD, announcing where we think we are
+                    _rv = await session.post(DEFAULT_BROADCAST_URL, data={
+                        "self": self.url,
+                        "host": HOSTNAME,
+                        "app": self.app.app_id,
+                    })
+            except aiohttp.ClientError as e:
+                print(f"WARNING: Could not initiate health broadcast to {DEFAULT_BROADCAST_URL}: {e}")
 
     def add_status_check(self, function: callable, required=False):
         """Adds a new status check to the monitor. If `required` is True, this
