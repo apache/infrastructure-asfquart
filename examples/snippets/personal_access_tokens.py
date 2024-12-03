@@ -29,6 +29,7 @@ async def token_handler(token):
         "roleaccount": True,
         "metadata": {
           "scope": roledata.scope,  # Mark the scope of this roleaccount (or PAT) internally
+        }
       }
       return session
 
