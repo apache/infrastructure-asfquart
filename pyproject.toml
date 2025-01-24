@@ -28,3 +28,14 @@ watchfiles = "~0.24.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+minversion = "7.2"
+testpaths  = ["tests"]
+pythonpath = ["src"]
+python_files = "*.py"
+markers = [
+    "config: Configuration parsing tests",
+    "session: Client session management tests",
+    "auth: Authentication/Authorization tests"
+]

@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-import sys
-sys.path.extend(('src', '../src',))  # Depending on where unit tests are run from, path may differ
-
 import pathlib
 
 import pytest
@@ -18,7 +15,7 @@ async def test_config_static():
     """Tests static (one-time) configuration parsing in blocking and async mode"""
 
     @asfquart.config.static
-    def config_callback(yml: dict):
+    async def config_callback(yml: dict):
         assert yml, "Config YAML is empty!"
         assert isinstance(yml, dict), "Config YAML is not a dict!"
 

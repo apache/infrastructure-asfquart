@@ -1,10 +1,10 @@
-  # asfquart - a Quart framework for the ASF
-  ![Unit Tests](https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg)
+# asfquart - a Quart framework for the ASF
+![Unit Tests](https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg)
   
-  This repository will house the future [Quart](https://github.com/pallets/quart/) framework for use 
-  within ASF web applications. Nothing much to see here yet...
+This repository will house the future [Quart](https://github.com/pallets/quart/) framework for use 
+within ASF web applications. Nothing much to see here yet...
 
-  For more detailed documentation, see the [documentation page](docs/readme.md).
+For more detailed documentation, see the [documentation page](docs/readme.md).
   
 ## Primer
 
@@ -31,4 +31,12 @@ def my_app():
 if __name__ == "__main__":
     my_app()
 
+~~~
+
+## Running unit tests for asfquart
+
+To run manually, use the following commands from the root dir of this repo:
+
+~~~shell
+poetry run pytest
 ~~~
