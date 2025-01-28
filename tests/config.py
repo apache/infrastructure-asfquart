@@ -15,9 +15,11 @@ async def test_config_static():
     """Tests static (one-time) configuration parsing in blocking and async mode"""
 
     @asfquart.config.static
-    async def config_callback(yml: dict):
+    def config_callback(yml: dict):
         assert yml, "Config YAML is empty!"
         assert isinstance(yml, dict), "Config YAML is not a dict!"
 
     # Async test
-    await config_callback(TEST_CONFIG_FILENAME)
+    # the decorator @asfquart.config.static wraps the function to an async method
+    # suppress inspections as they fail to recognize that
+    await config_callback(TEST_CONFIG_FILENAME)  # noqa
