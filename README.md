@@ -3,6 +3,35 @@
   
 This is a [Quart](https://github.com/pallets/quart/) framework for ASF web applications.
 
+On top of Quart, this package layers a lot of functionality, much of which is specific to
+the ASF and its infrastructure and preferred approaches for website application development.
+
+asfquart adds the following items to basic quart:
+
+* simple construction of the `APP`
+* default `config.yaml`
+* watching the .py and config for changes, to cause a restart/reload
+* watch SIGINT to halt and SIGUSR2 to restart/reload
+* template watching and rendering for EZT templates
+* URL path routing for pages and API endpoints
+* Oauth with our ASF provide for authn
+* LDAP group testing for authz
+* long-running tasks and their lifecycle management
+
+Current users of asfquart:
+
+* Board Agenda tool
+* Infrastructure's Reporting Dashboard
+* personal/home project of gstein
+* ??
+
+Future users of asfquart:
+
+* Apache STeVe
+* Identity management (replaces the old id.a.o)
+* Gitbox UI
+* ??
+
 ## Primer
 
 See the [documentation page](docs/readme.md) for more information.
