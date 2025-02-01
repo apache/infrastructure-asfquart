@@ -14,7 +14,7 @@ asfquart adds the following items to basic quart:
 * watch SIGINT to halt and SIGUSR2 to restart/reload
 * template watching and rendering for EZT templates
 * URL path routing for pages and API endpoints
-* Oauth with our ASF provide for authn
+* Oauth with our ASF provider for authn
 * LDAP group testing for authz
 * long-running tasks and their lifecycle management
 
