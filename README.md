@@ -60,3 +60,11 @@ if __name__ == "__main__":
     my_app()
 
 ~~~
+
+## Running unit tests for asfquart
+
+To run manually, use the following commands from the root dir of this repo:
+
+~~~shell
+poetry run pytest
+~~~
