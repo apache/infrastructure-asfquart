@@ -18,12 +18,12 @@ asfquart adds the following items to basic quart:
 * LDAP group testing for authz
 * long-running tasks and their lifecycle management
 
-Current users of asfquart:
+Current (known, public) users of asfquart:
 
-* Board Agenda tool
-* Infrastructure's Reporting Dashboard
-* personal/home project of gstein
-* ??
+* [Board Agenda Tool](https://github.com/apache/infrastructure-agenda/)
+* [Infrastructure's Reporting Dashboard](https://github.com/apache/infrastructure-reporting-dashboard)
+* [ASF Self Serve Portal](https://github.com/apache/infrastructure-selfserve-portal)
+
 
 Future users of asfquart:
 
