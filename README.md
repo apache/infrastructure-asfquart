@@ -1,6 +1,9 @@
 # asfquart - a Quart framework for the ASF
-![Unit Tests](https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg)
-  
+![PyPI](https://img.shields.io/pypi/v/asfquart.svg?color=blue&maxAge=600)
+![PyPI - Python Versions](https://img.shields.io/pypi/pyversions/asfquart.svg?maxAge=600)
+![Unit Tests](https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg?branch=main)
+![Apache License](https://img.shields.io/github/license/apache/infrastructure-asfquart)
+
 This is a [Quart](https://github.com/pallets/quart/) framework for ASF web applications.
 
 On top of Quart, this package layers a lot of functionality, much of which is specific to
