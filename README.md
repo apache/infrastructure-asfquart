@@ -1,8 +1,8 @@
 # asfquart - a Quart framework for the ASF
-![PyPI](https://img.shields.io/pypi/v/asfquart.svg?color=blue&maxAge=600)
-![PyPI - Python Versions](https://img.shields.io/pypi/pyversions/asfquart.svg?maxAge=600)
-![Unit Tests](https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg?branch=main)
-![Apache License](https://img.shields.io/github/license/apache/infrastructure-asfquart)
+<a href="https://pypi.org/project/asfquart"><img alt="PyPI" src="https://img.shields.io/pypi/v/asfquart.svg?color=blue&maxAge=600" /></a>
+<a href="https://pypi.org/project/asfquart"><img alt="PyPI - Python Versions" src="https://img.shields.io/pypi/pyversions/asfquart.svg?maxAge=600" /></a>
+<a href="https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml?query=branch%3Amain"><img alt="Unit Tests" src="https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg?branch=main" /></a>
+<a href="https://github.com/apache/infrastructure-asfquart/blob/main/LICENSE"><img alt="Apache License" src="https://img.shields.io/github/license/apache/infrastructure-asfquart" /></a>
 
 This is a [Quart](https://github.com/pallets/quart/) framework for ASF web applications.
 
