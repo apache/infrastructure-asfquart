@@ -1,3 +1,6 @@
+Changes in 0.1.10:
+
+
 Changes in 0.1.9:
  - added the `metadata` dict to session objects where apps can store session-specific instructions
  - tightened file modes for the app secrets file. it will now fail to create if it already exists, and modes are better enforced
