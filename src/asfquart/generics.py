@@ -80,7 +80,14 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     oauth_data = await rv.json()
                     asfquart.session.write(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
-                    return quart.redirect(redirect_uri)
+                    # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
+                    # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go 
+                    # someplace else. This counts as a samesite request.
+                    return quart.Response(
+                        status=200,
+                        response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
+                        headers={"Refresh": f"0; url={redirect_uri}"}
+                    )
                 # Otherwise, just say hi
                 return quart.Response(
                     status=200,
