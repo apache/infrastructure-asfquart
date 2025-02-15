@@ -1,5 +1,6 @@
 Changes in 0.1.10:
-
+ - OAuth redirects have switch to using the Refresh HTTP header instead of a 30x response, allowing
+   samesite cookies to work with external OAuth providers when the hostname differs.
 
 Changes in 0.1.9:
  - added the `metadata` dict to session objects where apps can store session-specific instructions
