@@ -64,10 +64,35 @@ if __name__ == "__main__":
 
 ~~~
 
-## Running unit tests for asfquart
+## Installation
 
-To run manually, use the following commands from the root dir of this repo:
+Create and activate a virtual environment and then install `asfquart` using [pip](https://pip.pypa.io):
 
-~~~shell
-poetry run pytest
-~~~
+```console
+$ pip install "asfquart"
+```
+
+Note: Adding the `[aioldap]` extra will install optional dependencies for LDAP support that will
+require additional [system dependencies](https://github.com/noirello/bonsai?tab=readme-ov-file#requirements-for-building):
+
+```console
+$ pip install "asfquart[aioldap]"
+```
+
+## Building asfquart package
+
+Prerequisites:
+
+- `poetry`: install e.g. with pipx `pipx install poetry`
+
+Building the package:
+
+```console
+$ poetry build
+```
+
+Running the tests:
+
+```console
+$ poetry run pytest
+```
