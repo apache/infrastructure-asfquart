@@ -1,2 +1,7 @@
 github:
   del_branch_on_merge: true
+  # disable merge commits
+  enabled_merge_buttons:
+    squash:  true
+    merge:   false
+    rebase:  true
