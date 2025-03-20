@@ -26,10 +26,14 @@ aiohttp = "^3.9.2"
 PyYAML = "^6.0.1"
 quart = "^0.20.0"
 ezt = "~1.1"
-asfpy = "~0.52"
+asfpy = "~0.55"
+bonsai = { version = "*", optional = true }
 easydict = "~1.13"
 exceptiongroup = { version = ">=1.1.0", python = "<3.11" }
-watchfiles = "~0.24.0"
+watchfiles = "~1.0.0"
+
+[tool.poetry.extras]
+aioldap = ["bonsai"]
 
 [tool.poetry.group.test.dependencies]
 pytest = "7.2.0"
