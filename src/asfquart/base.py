@@ -182,6 +182,8 @@ class QuartApp(quart.Quart):
                          ):
         """Extended version of Quart.run()
 
+        HYPERCORN_CFG is the hypercorn config file in toml format to use.
+
         LOOP is the loop this app should run within. One will be constructed,
         if this is not provided.
 
@@ -207,7 +209,7 @@ class QuartApp(quart.Quart):
 
         print(f' * Serving Quart app "{self.app_id}"')
         print(f" * Debug mode: {config.debug}")
-        print(f" * Using config: {hypercorn_cfg_path}")
+        print(f" * Using hypercorn config: {hypercorn_cfg}")
         print(f" * Running on {config.bind}")
         print(" * ... CTRL + C to quit")
 
