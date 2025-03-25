@@ -192,8 +192,7 @@ class QuartApp(quart.Quart):
         """
 
         hypercorn_cfg_path = self.app_dir / hypercorn_cfg
-        config = hypercorn.Config()
-        config.from_toml(hypercorn_cfg_path)
+        config = hypercorn.Config.from_toml(hypercorn_cfg_path)
 
         if loop is None:
             loop = asyncio.new_event_loop()
