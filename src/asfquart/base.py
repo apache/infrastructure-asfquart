@@ -31,12 +31,12 @@ import signal
 import asfpy.twatcher
 import quart  # implies .app and .utils
 import hypercorn.utils
+import hypercorn.asyncio
 import ezt
 import easydict
 import yaml
 import watchfiles
 
-import __main__
 from . import utils
 
 try:
@@ -70,21 +70,16 @@ class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
     def __init__(self, app_id, *args, **kw):
+        # pop asfquart specific keyword args before calling super.init as quart panics about unknown keyword args
+        app_dir = kw.pop("app_dir", os.getcwd())
+        cfg_path = kw.pop("cfg_path", CONFIG_FNAME)
+
         super().__init__(app_id, *args, **kw)
 
-        # Locate the app dir as best we can. This is used for app ID
-        # and token filepath generation
-        # TODO: hypercorn does not have a __file__ variable available,
-        # so we are forced to fall back to CWD. Maybe have an optional arg
-        # for setting the app dir?
-        if hasattr(__main__, "__file__"):
-            self.app_dir = pathlib.Path(__main__.__file__).parent
-        else:  # No __file__, probably hypercorn, fall back to cwd for now
-            self.app_dir = pathlib.Path(os.getcwd())
+        self.app_dir = pathlib.Path(app_dir)
         self.app_id = app_id
 
-        # check if a path to a config file is given, otherwise default to CONFIG_FNAME
-        self.cfg_path = self.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
+        self.cfg_path = self.app_dir / cfg_path
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
@@ -133,7 +128,7 @@ class QuartApp(quart.Quart):
              host="0.0.0.0", port=None,
              debug=True, loop=None,
              certfile=None, keyfile=None,
-             extra_files=frozenset(), # OK, because immutable
+             extra_files=frozenset(),  # OK, because immutable
              ):
         """Extended version of Quart.run()
 
@@ -179,6 +174,44 @@ class QuartApp(quart.Quart):
         # Ready! Start running the app.
         self.run_forever(loop, task)
         # Being here, means graceful exit.
+
+    def runx_from_config(self, /,
+                         hypercorn_cfg: str,
+                         loop=None,
+                         extra_files=frozenset(),  # OK, because immutable
+                         ):
+        """Extended version of Quart.run()
+
+        LOOP is the loop this app should run within. One will be constructed,
+        if this is not provided.
+
+        EXTRA_FILES is a set of files (### relative to?) that should be
+        watched for changes. If a change occurs, the app will be reloaded.
+        """
+
+        hypercorn_cfg_path = self.app_dir / hypercorn_cfg
+        config = hypercorn.Config()
+        config.from_toml(hypercorn_cfg_path)
+
+        if loop is None:
+            loop = asyncio.new_event_loop()
+            loop.set_debug(config.debug)
+
+            asyncio.set_event_loop(loop)
+
+        # Create a factory for a trigger that watches for exceptions.
+        trigger = self.factory_trigger(loop, extra_files)
+
+        def serve_task():
+            return hypercorn.asyncio.serve(self, config, shutdown_trigger=trigger)
+
+        print(f' * Serving Quart app "{self.app_id}"')
+        print(f" * Debug mode: {config.debug}")
+        print(f" * Using config: {hypercorn_cfg_path}")
+        print(f" * Running on {config.bind}")
+        print(" * ... CTRL + C to quit")
+
+        self.run_forever(loop, serve_task())
 
     def factory_trigger(self, loop, extra_files=frozenset()):
         """Factory for an AWAITABLE that handles special exceptions.
