@@ -13,9 +13,8 @@ import asfquart
 app = asfquart.construct("myapp", oauth="/my_oauth")
 
 # Make another app, but do not enable oauth nor force login redirect (implied by no oauth)
-otherapp = asfquart.construct("otherapp", oauth=None)
+otherapp = asfquart.construct("otherapp", oauth=False)
 
 # Make a third app, enable oauth at /auth, but do not force logins
 thirdapp = asfquart.construct("thirdapp", oauth="/auth", force_login=False)
 ~~~
-
