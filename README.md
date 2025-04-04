@@ -43,7 +43,7 @@ See the [documentation page](docs/readme.md) for more information.
 import asfquart
 from asfquart.auth import Requirements as R
 
-def my_app():
+def my_app() -> asfquart.base.QuartApp:
     # Construct the quart service. By default, the oauth gateway is enabled at /oauth.
     app = asfquart.construct("my_app_service")
 
@@ -55,13 +55,18 @@ def my_app():
     @asfquart.auth.require(R.committer)
     async def secret_page():
       return "Secret stuff!"
-    
-    asfquart.APP.run(port=8000)
 
+    return app
 
 if __name__ == "__main__":
-    my_app()
+    app = my_app()
 
+    # Run the application in an extended debug mode:
+    #  - reload the app when any source / config file get changed
+    app.runx(port=8000)
+else:
+    # Serve the application via an ASGI server, e.g. hypercorn
+    app = my_app()
 ~~~
 
 ## Installation
@@ -95,4 +100,19 @@ Running the tests:
 
 ```console
 $ poetry run pytest
+```
+
+## Examples
+
+There is a simple test application included (`./examples/snippets/simple_app.py`) to outline the basic setup.
+To run the application in development mode, type:
+
+```console
+$ make example-dev
+```
+
+to run it with an ASGI server for production, type:
+
+```console
+$ make example-run
 ```
