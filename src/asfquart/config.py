@@ -10,10 +10,6 @@ import quart.config
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 
 
-class ASFQuartConfig(quart.config.Config, easydict.EasyDict):
-    pass
-
-
 async def _read_config(callback, config_filename):
     """Reads a YAML configuration and passes it to the callback"""
     with open(config_filename, encoding='utf-8') as r:

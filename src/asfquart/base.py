@@ -37,7 +37,6 @@ import yaml
 import watchfiles
 
 from . import utils
-from . import config
 
 try:
     ExceptionGroup
@@ -68,7 +67,6 @@ class ASFQuartException(Exception):
 
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
-    config_class = config.ASFQuartConfig
 
     def __init__(self, app_id: str, /, app_dir: str | None = None, cfg_file: str | None = CONFIG_FNAME, *args, **kw):
         """Construct an ASFQuart web application.
@@ -89,7 +87,6 @@ class QuartApp(quart.Quart):
         self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
 
         # use an easydict for config values
-        # FIXME: this is deprecated, use config instead
         self.cfg = easydict.EasyDict()
 
         # token handler callback for PATs - see docs/sessions.md
@@ -378,11 +375,7 @@ def construct(
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
-        config_values = yaml.safe_load(open(app.cfg_path))
-        app.config.update(config_values)
-
-        # FIXME: this is deprecated, app.cfg should be removed in favor of app.config
-        app.cfg.update(config_values)
+        app.cfg.update(yaml.safe_load(open(app.cfg_path)))
 
     # Provide our standard filename argument converter.
     import asfquart.utils
