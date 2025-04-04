@@ -36,8 +36,8 @@ import easydict
 import yaml
 import watchfiles
 
-import __main__
 from . import utils
+from . import config
 
 try:
     ExceptionGroup
@@ -68,29 +68,28 @@ class ASFQuartException(Exception):
 
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
+    config_class = config.ASFQuartConfig
 
-    def __init__(self, app_id, *args, **kw):
+    def __init__(self, app_id: str, /, app_dir: str | None = None, cfg_file: str | None = CONFIG_FNAME, *args, **kw):
+        """Construct an ASFQuart web application.
+
+        Arguments:
+            app_id: The name of the application, usually ``__name__``.
+            app_dir: Optional application directory, defaults to ``os.getcwd()`` if none is provided.
+            cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
+        """
         super().__init__(app_id, *args, **kw)
 
-        # Locate the app dir as best we can. This is used for app ID
-        # and token filepath generation
-        # TODO: hypercorn does not have a __file__ variable available,
-        # so we are forced to fall back to CWD. Maybe have an optional arg
-        # for setting the app dir?
-        if hasattr(__main__, "__file__"):
-            self.app_dir = pathlib.Path(__main__.__file__).parent
-        else:  # No __file__, probably hypercorn, fall back to cwd for now
-            self.app_dir = pathlib.Path(os.getcwd())
         self.app_id = app_id
-
-        # check if a path to a config file is given, otherwise default to CONFIG_FNAME
-        self.cfg_path = self.app_dir / kw.pop("cfg_path", CONFIG_FNAME)
+        self.app_dir = pathlib.Path(app_dir or os.getcwd())
+        self.cfg_path = self.app_dir / cfg_file
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
         self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
 
         # use an easydict for config values
+        # FIXME: this is deprecated, use config instead
         self.cfg = easydict.EasyDict()
 
         # token handler callback for PATs - see docs/sessions.md
@@ -337,19 +336,37 @@ class QuartApp(quart.Quart):
             ctask.cancel()
 
 
-def construct(name, *args, **kw):
-    ### add/alter/update ARGS and KW for our specific preferences
+def construct(
+    name: str,
+    /,
+    app_dir: str | None = None,
+    cfg_file: str | None = CONFIG_FNAME,
+    oauth: bool | str = True,
+    force_login: bool = True,
+    *args,
+    **kw
+):
+    """Construct an ASFQuart web application.
+
+    Arguments:
+        name: The name of the application, usually ``__name__``.
+        app_dir: Optional application directory, defaults to ``os.getcwd()`` if none is provided.
+        cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
+        oauth: Optional, configure OAuth endpoint, defaults to ``true``, to use a different
+            oauth URI than the default ``/auth``, specify the URI in the oauth argument,
+            for instance: asfquart.construct("myapp", oauth="/session").
+        force_login: Optional, enforces redirect to the oauth provider when a user
+            accesses a restricted page, defaults to ``true``.
+    """
 
     # By default, we will set up OAuth and force login redirect on auth failure
     # This can be turned off by setting oauth=False in the construct call.
     # To use a different oauth URI than the default /auth, specify the URI
     # in the oauth argument, for instance: asfquart.construct("myapp", oauth="/session")
-    # Pop the arguments from KW, as the parent class doesn't understand them.
-    setup_oauth = kw.pop("oauth", True)
-    # Note: order is important, as we want the .pop() to always execute.
-    force_auth_redirect = kw.pop("force_login", True) and setup_oauth
+    setup_oauth = oauth
+    force_auth_redirect = force_login and setup_oauth
 
-    app = QuartApp(name, *args, **kw)
+    app = QuartApp(name, app_dir, cfg_file, *args, **kw)
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
@@ -361,7 +378,11 @@ def construct(name, *args, **kw):
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
-        app.cfg.update(yaml.safe_load(open(app.cfg_path)))
+        config_values = yaml.safe_load(open(app.cfg_path))
+        app.config.update(config_values)
+
+        # FIXME: this is deprecated, app.cfg should be removed in favor of app.config
+        app.cfg.update(config_values)
 
     # Provide our standard filename argument converter.
     import asfquart.utils

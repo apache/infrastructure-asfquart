@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 
 """ASFQuart - Configuration readers"""
-
+import easydict
 import yaml
 import functools
 import inspect
+import quart.config
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"
+
+
+class ASFQuartConfig(quart.config.Config, easydict.EasyDict):
+    pass
 
 
 async def _read_config(callback, config_filename):
