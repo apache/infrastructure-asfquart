@@ -35,7 +35,7 @@ if __name__ == "__main__":
     app = my_app()
 
     # Run the application in an extended debug mode:
-    #  - reload the app when any source / config file get changed
+    #  - reload the app when any source / config file gets changed
     app.runx(port=8000)
 else:
     # Serve the application via an ASGI server, e.g. hypercorn
