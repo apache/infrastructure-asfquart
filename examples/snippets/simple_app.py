@@ -8,9 +8,9 @@ import asfquart.session
 
 
 def my_app() -> asfquart.base.QuartApp:
-    # Construct the base app. The /oauth gateway is enabled by default.
+    # Construct the base app. The oauth gateway at endpoint '/auth' is enabled by default.
     # To disable it, use construct("my_app", oauth=False)
-    app = asfquart.construct("my_simple_app", cfg_file="config.yaml")
+    app = asfquart.construct("my_simple_app")
 
     # Default homepage
     @app.route("/")
