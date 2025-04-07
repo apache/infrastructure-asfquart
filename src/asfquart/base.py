@@ -68,7 +68,7 @@ class ASFQuartException(Exception):
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
-    def __init__(self, app_id: str, /, app_dir: str | None = None, cfg_file: str | None = CONFIG_FNAME, *args, **kw):
+    def __init__(self, app_id: str, /, app_dir: str | None = None, cfg_file: str | None = None, *args, **kw):
         """Construct an ASFQuart web application.
 
         Arguments:
@@ -80,7 +80,7 @@ class QuartApp(quart.Quart):
 
         self.app_id = app_id
         self.app_dir = pathlib.Path(app_dir or os.getcwd())
-        self.cfg_path = self.app_dir / cfg_file
+        self.cfg_path = self.app_dir / (cfg_file or CONFIG_FNAME)
 
         # Most apps will require a watcher for their EZT templates.
         self.tw = asfpy.twatcher.TemplateWatcher()
@@ -337,7 +337,7 @@ def construct(
     name: str,
     /,
     app_dir: str | None = None,
-    cfg_file: str | None = CONFIG_FNAME,
+    cfg_file: str | None = None,
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
