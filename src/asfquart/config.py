@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 """ASFQuart - Configuration readers"""
-
 import yaml
 import functools
 import inspect

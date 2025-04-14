@@ -7,8 +7,8 @@ import asfquart.generics
 import asfquart.session
 
 
-def my_app():
-    # Construct the base app. The /oauth gateway is enabled by default.
+def my_app() -> asfquart.base.QuartApp:
+    # Construct the base app. The oauth gateway at endpoint '/auth' is enabled by default.
     # To disable it, use construct("my_app", oauth=False)
     app = asfquart.construct("my_simple_app")
 
@@ -26,8 +26,17 @@ def my_app():
     # Authentication failures redirect to login flow.
     asfquart.generics.enforce_login(app)
 
-    app.run(port=8000)
+    # Print some message to indicate that the application has been loaded.
+    print(f"Loaded app '{app.name}'.")
+    return app
 
 
 if __name__ == "__main__":
-    my_app()
+    app = my_app()
+
+    # Run the application in an extended debug mode:
+    #  - reload the app when any source / config file gets changed
+    app.runx(port=8000)
+else:
+    # Serve the application via an ASGI server, e.g. hypercorn
+    app = my_app()
