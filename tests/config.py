@@ -9,7 +9,6 @@ TEST_CONFIG_FILENAME = pathlib.Path(__file__).parent / "data/config.test.yaml"
 times_loaded = 0
 
 
-@pytest.mark.asyncio
 @pytest.mark.config
 async def test_config_static():
     """Tests static (one-time) configuration parsing in blocking and async mode"""

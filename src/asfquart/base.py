@@ -68,13 +68,24 @@ class ASFQuartException(Exception):
 class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
-    def __init__(self, app_id: str, /, app_dir: str | None = None, cfg_file: str | None = None, *args, **kw):
+    def __init__(
+            self,
+            app_id: str,
+            /,
+            app_dir: str | None = None,
+            cfg_file: str | None = None,
+            token_file: str | None = "apptoken.txt",
+            *args,
+            **kw
+    ):
         """Construct an ASFQuart web application.
 
         Arguments:
             app_id: The name of the application, usually ``__name__``.
             app_dir: Optional application directory, defaults to ``os.getcwd()`` if none is provided.
             cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
+            token_file: Optional token file name, defaults to ``apptoken.txt``, when setting to None,
+                        the app secret will not be persisted.
         """
         super().__init__(app_id, *args, **kw)
 
@@ -92,38 +103,49 @@ class QuartApp(quart.Quart):
         # token handler callback for PATs - see docs/sessions.md
         self.token_handler = None  # Default to no PAT handler available.
 
-        # Read, or set and write, the application secret token for
-        # session encryption. We prefer permanence for the session
-        # encryption, but will fall back to a new secret if we
-        # cannot write a permanent token to disk...with a warning!
-        _token_filename = self.app_dir / "apptoken.txt"
+        if token_file is not None:
+            if os.path.isabs(token_file):
+                _token_filename = pathlib.Path(token_file)
+            else:
+                _token_filename = self.app_dir / token_file
+        else:
+            _token_filename = None
 
-        if os.path.isfile(_token_filename):  # Token file exists, try to read it
-            # Test that permissions are as we want them, warn if not, but continue
-            st = os.stat(_token_filename)
-            file_mode = st.st_mode & 0o777
-            if file_mode != SECRETS_FILE_MODE:
-                sys.stderr.write(
-                    f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
-                )
-            self.secret_key = open(_token_filename).read()
-        else:  # No token file yet, try to write, warn if we cannot
+        self.token_path = _token_filename
+
+        if _token_filename is None:
             self.secret_key = secrets.token_hex()
-            ### TBD: throw the PermissionError once we stabilize how to locate
-            ### the APP directory (which can be thrown off during testing)
-            try:
-                # New secrets files should be created with chmod 600, to ensure that only
-                # the app has access to them. umask is recorded and changed during this, to 
-                # ensure we don't have umask overriding what we want to achieve.
-                umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
+        else:
+            # Read, or set and write, the application secret token for
+            # session encryption. We prefer permanence for the session
+            # encryption, but will fall back to a new secret if we
+            # cannot write a permanent token to disk...with a warning!
+            if os.path.isfile(_token_filename):  # Token file exists, try to read it
+                # Test that permissions are as we want them, warn if not, but continue
+                st = os.stat(_token_filename)
+                file_mode = st.st_mode & 0o777
+                if file_mode != SECRETS_FILE_MODE:
+                    sys.stderr.write(
+                        f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
+                    )
+                self.secret_key = open(_token_filename).read()
+            else:  # No token file yet, try to write, warn if we cannot
+                self.secret_key = secrets.token_hex()
+                ### TBD: throw the PermissionError once we stabilize how to locate
+                ### the APP directory (which can be thrown off during testing)
                 try:
-                    fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
-                finally:
-                    os.umask(umask_original)  # reset umask to the original setting
-                with open(fd, "w") as sfile:
-                    sfile.write(self.secret_key)
-            except PermissionError:
-                LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
+                    # New secrets files should be created with chmod 600, to ensure that only
+                    # the app has access to them. umask is recorded and changed during this, to
+                    # ensure we don't have umask overriding what we want to achieve.
+                    umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
+                    try:
+                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
+                    finally:
+                        os.umask(umask_original)  # reset umask to the original setting
+                    with open(fd, "w") as sfile:
+                        sfile.write(self.secret_key)
+                except PermissionError:
+                    LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
     def runx(self, /,
              host="0.0.0.0", port=None,
@@ -338,6 +360,7 @@ def construct(
     /,
     app_dir: str | None = None,
     cfg_file: str | None = None,
+    token_file: str | None = "apptoken.txt",
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
@@ -349,6 +372,8 @@ def construct(
         name: The name of the application, usually ``__name__``.
         app_dir: Optional application directory, defaults to ``os.getcwd()`` if none is provided.
         cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
+        token_file: Optional token file name, defaults to ``apptoken.txt``, when setting to None,
+            the app secret will not be persisted.
         oauth: Optional, configure OAuth endpoint, defaults to ``true``, to use a different
             oauth URI than the default ``/auth``, specify the URI in the oauth argument,
             for instance: asfquart.construct("myapp", oauth="/session").
@@ -363,7 +388,7 @@ def construct(
     setup_oauth = oauth
     force_auth_redirect = force_login and setup_oauth
 
-    app = QuartApp(name, app_dir, cfg_file, *args, **kw)
+    app = QuartApp(name, app_dir, cfg_file, token_file, *args, **kw)
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
