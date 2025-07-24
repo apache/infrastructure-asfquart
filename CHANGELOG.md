@@ -1,3 +1,6 @@
+Changes in 0.1.11:
+ - added parameter `token_file` when constructing a `QuartApp` to control if / where the app secret shall be stored.
+
 Changes in 0.1.10:
  - OAuth redirects have switch to using the Refresh HTTP header instead of a 30x response, allowing
    samesite cookies to work with external OAuth providers when the hostname differs.

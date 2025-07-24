@@ -9,10 +9,9 @@ import asfquart.auth
 from asfquart.auth import Requirements as R
 
 
-@pytest.mark.asyncio
 @pytest.mark.auth
 async def test_auth_basics():
-    app = asfquart.construct("foobar")
+    app = asfquart.construct("foobar", token_file=None)
 
     # Generic auth test, just requires a valid session
     @asfquart.auth.require
@@ -42,12 +41,11 @@ async def test_auth_basics():
             pass
 
 
-@pytest.mark.asyncio
 @pytest.mark.auth
 async def test_mfa_auth():
     """MFA tests"""
 
-    app = asfquart.construct("foobar")
+    app = asfquart.construct("foobar", token_file=None)
 
     @asfquart.auth.require(R.mfa_enabled)
     async def requires_mfa():
@@ -72,12 +70,11 @@ async def test_mfa_auth():
     await requires_mfa()
 
 
-@pytest.mark.asyncio
 @pytest.mark.auth
 async def test_role_auth():
     """Role tests"""
 
-    app = asfquart.construct("foobar")
+    app = asfquart.construct("foobar", token_file=None)
 
     # Set up some role tests
     @asfquart.auth.require  # no args implies any valid account

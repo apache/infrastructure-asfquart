@@ -7,10 +7,9 @@ import quart
 import asfquart
 
 
-@pytest.mark.asyncio
 @pytest.mark.session
 async def test_sessions():
-    app = asfquart.construct("foobar")
+    app = asfquart.construct("foobar", token_file=None)
     quart.session = {app.app_id: {"uts": time.time(), "uid": "bar"}}
     my_session = await asfquart.session.read()
     assert my_session, "Was expecting a session, but got nothing in return"
