@@ -54,6 +54,7 @@ LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this user only
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
 CONFIG_FNAME = 'config.yaml'
+TOKEN_FNAME = 'apptoken.txt'
 
 
 class ASFQuartException(Exception):
@@ -74,7 +75,7 @@ class QuartApp(quart.Quart):
             /,
             app_dir: str | None = None,
             cfg_file: str | None = None,
-            token_file: str | None = "apptoken.txt",
+            token_file: str | None = TOKEN_FNAME,
             *args,
             **kw
     ):
@@ -104,10 +105,9 @@ class QuartApp(quart.Quart):
         self.token_handler = None  # Default to no PAT handler available.
 
         if token_file is not None:
-            if os.path.isabs(token_file):
-                _token_filename = pathlib.Path(token_file)
-            else:
-                _token_filename = self.app_dir / token_file
+            # Path.__truediv__ internally handles the case of absolute / relative path segments
+            # if an anchored segment (i.e. absolute path) is provided, the segment will be returned as is.
+            _token_filename = self.app_dir / token_file
         else:
             _token_filename = None
 
@@ -360,7 +360,7 @@ def construct(
     /,
     app_dir: str | None = None,
     cfg_file: str | None = None,
-    token_file: str | None = "apptoken.txt",
+    token_file: str | None = TOKEN_FNAME,
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
