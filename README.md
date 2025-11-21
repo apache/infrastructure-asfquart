@@ -23,7 +23,7 @@ asfquart adds the following items to basic quart:
 
 Current (known, public) users of asfquart:
 
-* [Board Agenda Tool](https://github.com/apache/infrastructure-agenda/)
+* [Apache Trusted Releases platform](https://github.com/apache/tooling-trusted-releases)
 * [Infrastructure's Reporting Dashboard](https://github.com/apache/infrastructure-reporting-dashboard)
 * [ASF Self Serve Portal](https://github.com/apache/infrastructure-selfserve-portal)
 
