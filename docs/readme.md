@@ -2,7 +2,7 @@
 
 ## Constructing the base quart app
 
-~~~python
+```python
 import asfquart
 
 def main():
@@ -13,17 +13,18 @@ if __name__ == "__main__":
     app = main()
     # run a development server on port 8080
     app.runx(port=8080)
-~~~
+```
 
 Other modules in the app will use:
-~~~
+
+```python
 import asfquart
 APP = asfquart.APP
 
 @APP.some_decorator
 async def some_endpoint():
     return do_something()
-~~~
+```
 
 ## See also (WIP):
 

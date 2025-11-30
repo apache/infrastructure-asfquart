@@ -1,4 +1,5 @@
 # asfquart - a Quart framework for the ASF
+
 <a href="https://pypi.org/project/asfquart"><img alt="PyPI" src="https://img.shields.io/pypi/v/asfquart.svg?color=blue&maxAge=600" /></a>
 <a href="https://pypi.org/project/asfquart"><img alt="PyPI - Python Versions" src="https://img.shields.io/pypi/pyversions/asfquart.svg?maxAge=600" /></a>
 <a href="https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml?query=branch%3Amain"><img alt="Unit Tests" src="https://github.com/apache/infrastructure-asfquart/actions/workflows/unit-tests.yml/badge.svg?branch=main" /></a>
@@ -27,19 +28,17 @@ Current (known, public) users of asfquart:
 * [Infrastructure's Reporting Dashboard](https://github.com/apache/infrastructure-reporting-dashboard)
 * [ASF Self Serve Portal](https://github.com/apache/infrastructure-selfserve-portal)
 
+Futured users of asfquart:
 
-Future users of asfquart:
-
-* Apache STeVe
-* Identity management (replaces the old id.a.o)
-* Gitbox UI
-* ??
+* [Apache STeVe](https://github.com/apache/steve)
+* [ASF Identity management](https://id.apache.org)
+* [ASF GitBox UI](https://gitbox.apache.org/repos/asf)
 
 ## Primer
 
-See the [documentation page](docs/readme.md) for more information.
+See the [documentation page](docs/README.md) for more information.
 
-~~~python
+```python
 import asfquart
 from asfquart.auth import Requirements as R
 
@@ -67,21 +66,21 @@ if __name__ == "__main__":
 else:
     # Serve the application via an ASGI server, e.g. hypercorn
     app = my_app()
-~~~
+```
 
 ## Installation
 
 Create and activate a virtual environment and then install `asfquart` using [pip](https://pip.pypa.io):
 
-```console
-$ pip install "asfquart"
+```shell
+pip install "asfquart"
 ```
 
 Note: Adding the `[aioldap]` extra will install optional dependencies for LDAP support that will
 require additional [system dependencies](https://github.com/noirello/bonsai?tab=readme-ov-file#requirements-for-building):
 
-```console
-$ pip install "asfquart[aioldap]"
+```shell
+pip install "asfquart[aioldap]"
 ```
 
 ## Building asfquart package
@@ -92,14 +91,14 @@ Prerequisites:
 
 Building the package:
 
-```console
-$ poetry build
+```shell
+poetry build
 ```
 
 Running the tests:
 
-```console
-$ poetry run pytest
+```shell
+poetry run pytest
 ```
 
 ## Examples
@@ -107,12 +106,12 @@ $ poetry run pytest
 There is a simple test application included (`./examples/snippets/simple_app.py`) to outline the basic setup.
 To run the application in development mode, type:
 
-```console
-$ make example-dev
+```shell
+make example-dev
 ```
 
 to run it with an ASGI server for production, type:
 
-```console
-$ make example-run
+```shell
+make example-run
 ```

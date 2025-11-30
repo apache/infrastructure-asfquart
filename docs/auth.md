@@ -18,7 +18,7 @@ that must pass in order to make use of the endpoint.
 By default, requirements are implicitly in the `all_of` category, meaning they are AND'ed together.
 You can also OR requirements by using the `any_of` flag instead:
 
-~~~python
+```python
 @asfquart.auth.require   # Require a valid session of any kind (implicitly, committer)
 async def func():
    pass
@@ -32,11 +32,11 @@ async def func():
 
 # You can also use both, such as requiring (req1 AND req2) AND (either req3 OR req4)
 @asfquart.auth.require(all_of={req1, req2}, any_of={req3,req4})
-~~~
+```
 
 The example below shows how to cordon off specific end-points to certain groups of users:
 
-~~~python
+```python
 import asfquart
 from asfquart.auth import Requirements as R
 APP = asfquart.APP
@@ -64,5 +64,4 @@ async def view_that_requires_member_role():
 @asfquart.auth.require(any_of={R.member, R.chair})  # Either chair or member (or both) required
 async def view_that_requires_some_role():
    pass
-
-~~~
+```

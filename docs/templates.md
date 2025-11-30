@@ -8,7 +8,7 @@ template, to produce an HTML page. The decorator specifies the template,
 and the function returns that data dictionary. These are combined and
 used as the page response for the route/endpoint.
 
-~~~python
+```python
 import asfquart
 APP = asfquart.APP
 
@@ -19,7 +19,7 @@ async def page_example():
         'count': 42,
         }
     return data
-~~~
+```
 
 The `APP.use_template()` decorator takes an EZT Template instance, or
 a path to a source file. For the latter, it will install a "watcher" on
@@ -40,7 +40,7 @@ And it should not be a problem. So they say.
 The preferred approach is to load the template once, register it for watching,
 and then to provide the template to the use/render decorator. Example:
 
-~~~python
+```python
 import asfquart
 APP = asfquart.APP
 
@@ -58,4 +58,4 @@ async def page_example():
 async def other_example():
     ...
     return other_data
-~~~
+```
