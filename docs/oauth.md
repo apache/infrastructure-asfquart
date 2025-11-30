@@ -6,7 +6,7 @@ and redirect back to the restricted end-point once successful.
 
 You can tailor these automatic behavior to suit your need, as shown in this example:
 
-~~~python
+```python
 import asfquart
 
 # Construct an app, with auto OAuth at /my_oauth
@@ -17,4 +17,4 @@ otherapp = asfquart.construct("otherapp", oauth=False)
 
 # Make a third app, enable oauth at /auth, but do not force logins
 thirdapp = asfquart.construct("thirdapp", oauth="/auth", force_login=False)
-~~~
+```
