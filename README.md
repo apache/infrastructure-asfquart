@@ -28,11 +28,12 @@ Current (known, public) users of asfquart:
 * [Infrastructure's Reporting Dashboard](https://github.com/apache/infrastructure-reporting-dashboard)
 * [ASF Self Serve Portal](https://github.com/apache/infrastructure-selfserve-portal)
 
-Futured users of asfquart:
+Future users of asfquart:
 
 * [Apache STeVe](https://github.com/apache/steve)
 * [ASF Identity management](https://id.apache.org)
 * [ASF GitBox UI](https://gitbox.apache.org/repos/asf)
+* others, to be listed
 
 ## Primer
 
