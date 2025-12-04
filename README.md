@@ -71,35 +71,63 @@ else:
 
 ## Installation
 
-Create and activate a virtual environment and then install `asfquart` using [pip](https://pip.pypa.io):
+Create and activate a virtual environment and then install `asfquart` using [uv](https://docs.astral.sh/uv/) or [pip](https://pip.pypa.io):
 
 ```shell
-pip install "asfquart"
+# With uv
+uv add asfquart
+
+# With uv pip-compatible interface
+uv pip install asfquart
+
+# With standard pip
+pip install asfquart
 ```
 
 Note: Adding the `[aioldap]` extra will install optional dependencies for LDAP support that will
 require additional [system dependencies](https://github.com/noirello/bonsai?tab=readme-ov-file#requirements-for-building):
 
 ```shell
+# With uv
+uv add asfquart --extra aioldap
+
+# With uv pip-compatible interface
+uv pip install "asfquart[aioldap]"
+
+# With standard pip
 pip install "asfquart[aioldap]"
 ```
 
-## Building asfquart package
+## Development
 
-Prerequisites:
+### Install development environment
 
-- `poetry`: install e.g. with pipx `pipx install poetry`
-
-Building the package:
+Install the required dependencies for development:
 
 ```shell
-poetry build
+uv sync
 ```
+
+Install the optional dependencies for development:
+
+```shell
+uv sync --extra aioldap
+```
+
+### Building asfquart package
 
 Running the tests:
 
 ```shell
-poetry run pytest
+uv sync --all-extras --group test
+
+uv run pytest
+```
+
+Building the package:
+
+```shell
+uv build
 ```
 
 ## Examples

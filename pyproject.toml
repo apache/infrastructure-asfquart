@@ -1,7 +1,8 @@
-[tool.poetry]
+[project]
 name = "asfquart"
 version = "0.1.13"
-authors = ["ASF Infrastructure <users@infra.apache.org>"]
+requires-python = ">=3.10,<4"
+authors = [{ name = "ASF Infrastructure", email = "users@infra.apache.org" }]
 license = "Apache-2.0"
 readme = "README.md"
 classifiers = [
@@ -18,42 +19,43 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 description = "ASF Quart Framework"
-repository = "https://github.com/apache/infrastructure-asfquart"
+dependencies = [
+    "aiohttp>=3.9.2,<4",
+    "PyYAML>=6.0.1,<7",
+    "quart>=0.20.0,<1",
+    "ezt>=1.1,<2",
+    "asfpy>=0.56,<1",
+    "easydict>=1.13,<2",
+    "exceptiongroup>=1.1.0; python_version<'3.11'",
+    "watchfiles>=1.0.0,<2",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<4"
-aiohttp = "^3.9.2"
-PyYAML = "^6.0.1"
-quart = ">=0.20.0,<1"
-ezt = "^1.1"
-asfpy = ">=0.56,<1"
-bonsai = { version = "*", optional = true }
-easydict = "^1.13"
-exceptiongroup = { version = ">=1.1.0", python = "<3.11" }
-watchfiles = "^1.0.0,<2"
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 aioldap = ["bonsai"]
 
-[tool.poetry.group.test.dependencies]
-pytest = "7.2.0"
-pytest-cov = "^4.0.0"
-pytest-asyncio = "^0.20.3"
-pytest-mock = "^3.10.0"
+[dependency-groups]
+test = [
+    "pytest==7.2.0",
+    "pytest-cov>=4.0.0,<5",
+    "pytest-asyncio>=0.20.3,<1",
+    "pytest-mock>=3.10.0,<4",
+]
+
+[project.urls]
+Repository = "https://github.com/apache/infrastructure-asfquart"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9.11,<0.10.0"]
+build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 minversion = "7.2"
-testpaths  = ["tests"]
+testpaths = ["tests"]
 pythonpath = ["src"]
 python_files = "*.py"
 markers = [
     "config: Configuration parsing tests",
     "session: Client session management tests",
-    "auth: Authentication/Authorization tests"
+    "auth: Authentication/Authorization tests",
 ]
-
 asyncio_mode = "auto"
