@@ -9,8 +9,11 @@ At present, asfquart features the following auth requirements:
 
 - `asfquart.auth.Requirements.committer`: User must be a committer of any project to access
 - `asfquart.auth.Requirements.member`: User must be a member of the Foundation to access
+- `asfquart.auth.Requirements.pmc_member`: User must be a PMC member of any top-level project
 - `asfquart.auth.Requirements.chair`: User must be a chair of one or more projects
+- `asfquart.auth.Requirements.root`: User must be a member of infra-root
 - `asfquart.auth.Requirements.mfa_enabled`: User must be logged in using a method that requires multi-factor authentication
+- `asfquart.auth.Requirements.roleacct`: User is a service account
 
 These requirements can be passed to the `asfquart.auth.require` decorator to create a list of requirements
 that must pass in order to make use of the endpoint.
