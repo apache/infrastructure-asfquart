@@ -61,41 +61,41 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     # asks the werkzeug LocalProxy wrapper whether a request exists or not, and bails if not.
     elif bool(quart.request) and 'Authorization' in quart.request.headers:
         match quart.request.authorization.type:
-                case "bearer":  # Role accounts, PATs - TBD
-                    if app.token_handler:
-                        assert callable(app.token_handler), "app.token_handler is not a callable function!"
-                        session_dict = None  # Blank, in case we don't have a working callback.
-                        # Async token handler?
-                        if asyncio.iscoroutinefunction(app.token_handler):
-                            session_dict = await app.token_handler(quart.request.authorization.token)
-                        # Sync handler?
-                        elif callable(app.token_handler):
-                            session_dict = app.token_handler(quart.request.authorization.token)
-                        # If token handler returns a dict, we have a session and should set it up
-                        if session_dict:
-                            return ClientSession(session_dict)
-                    else:
-                        print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
-                case "basic":  # Basic LDAP auth - will need to grab info from LDAP
-                    if ldap.LDAP_SUPPORTED:
-                        try:
-                            auth_user = quart.request.authorization.parameters["username"]
-                            auth_pwd = quart.request.authorization.parameters["password"]
-                            ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
-                            ldap_affiliations = await ldap_client.get_affiliations()
-                            # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
-                            session_dict = {
-                                "uid": auth_user,
-                                "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
-                                "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
-                            }
-                            return ClientSession(session_dict)
-                        except (binascii.Error, ValueError, KeyError) as e:
-                            # binascii/ValueError == bad base64 auth string
-                            # KeyError = missing username or password
-                            raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
-                case default:
-                    raise base.ASFQuartException("Not implemented yet", errorcode=501)
+            case "bearer":  # Role accounts, PATs - TBD
+                if app.token_handler:
+                    assert callable(app.token_handler), "app.token_handler is not a callable function!"
+                    session_dict = None  # Blank, in case we don't have a working callback.
+                    # Async token handler?
+                    if asyncio.iscoroutinefunction(app.token_handler):
+                        session_dict = await app.token_handler(quart.request.authorization.token)
+                    # Sync handler?
+                    elif callable(app.token_handler):
+                        session_dict = app.token_handler(quart.request.authorization.token)
+                    # If token handler returns a dict, we have a session and should set it up
+                    if session_dict:
+                        return ClientSession(session_dict)
+                else:
+                    print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
+            case "basic":  # Basic LDAP auth - will need to grab info from LDAP
+                if ldap.LDAP_SUPPORTED:
+                    try:
+                        auth_user = quart.request.authorization.parameters["username"]
+                        auth_pwd = quart.request.authorization.parameters["password"]
+                        ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
+                        ldap_affiliations = await ldap_client.get_affiliations()
+                        # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
+                        session_dict = {
+                            "uid": auth_user,
+                            "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
+                            "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
+                        }
+                        return ClientSession(session_dict)
+                    except (binascii.Error, ValueError, KeyError) as e:
+                        # binascii/ValueError == bad base64 auth string
+                        # KeyError = missing username or password
+                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
+            case default:
+                raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
 
 def write(session_data: dict, app=None):
