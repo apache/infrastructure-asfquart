@@ -51,7 +51,7 @@ def my_app():
         return await asfquart.session.read()
 
     app.run(port=8000)
-  
+
 
 if __name__ == "__main__":
     my_app()

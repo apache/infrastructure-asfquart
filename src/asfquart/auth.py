@@ -17,7 +17,7 @@ class Requirements:
     E_NOT_ROOT = "This endpoint is only accessible to foundation staff."
     E_NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
     E_NOT_ROLEACCOUNT = "This endpoint is only accessible to role accounts."
-    
+
 
     @classmethod
     def mfa_enabled(cls, client_session: session.ClientSession):
@@ -51,7 +51,7 @@ class Requirements:
     def pmc_member(cls, client_session: session.ClientSession):
         """tests for whether the user is a PMC member of any top-level project"""
         # Anything but True will cause a failure.
-        return bool(client_session.committees), cls.E_NOT_PMC    
+        return bool(client_session.committees), cls.E_NOT_PMC
 
     @classmethod
     def roleacct(cls, client_session: session.ClientSession):

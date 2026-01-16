@@ -1,9 +1,9 @@
 # Session handling
 
-OAuth user sessions can be accessed through the `asfquart.session` component, and are encrypted 
+OAuth user sessions can be accessed through the `asfquart.session` component, and are encrypted
 to ensure authenticity.
 
-The login and logout flow is automatically handled by asfquart, unless explicitly told not to, 
+The login and logout flow is automatically handled by asfquart, unless explicitly told not to,
 and sessions can be accessed and modified as needed:
 
 ```python
@@ -22,7 +22,7 @@ assert session, "No session found or session expired"  # If too old or not found
 ```
 
 ## Role account management via declared PAT handler
-Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler 
+Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler
 is declared:
 
 ```python
@@ -46,9 +46,9 @@ curl -H "Authorization: bearer abcdefg" https://foo.apache.org/some-endpoint
 ```
 
 ## Using scopes for tokens
-If the application makes use of scopes to limit what an access token can do, you can note these scopes inside the 
-`metadata` dictionary when constructing the session dict to return. The `metadata` dict can be used for whatever 
-information you wish to keep about a specific session, and is accessed through `session.metadata` when fetched via 
+If the application makes use of scopes to limit what an access token can do, you can note these scopes inside the
+`metadata` dictionary when constructing the session dict to return. The `metadata` dict can be used for whatever
+information you wish to keep about a specific session, and is accessed through `session.metadata` when fetched via
 the usual `session = await asfquart.session.read()` call. Thus, you can test your tokens at the endpoint:
 
 ```python

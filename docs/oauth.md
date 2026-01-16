@@ -1,8 +1,8 @@
 # OAuth workflows
 
-asfquart will, by default, set up an OAuth endpoint at `/auth`. Unauthenticated access 
-to any restricted end-point will automatically trigger a redirect to the OAuth workflow 
-and redirect back to the restricted end-point once successful. 
+asfquart will, by default, set up an OAuth endpoint at `/auth`. Unauthenticated access
+to any restricted end-point will automatically trigger a redirect to the OAuth workflow
+and redirect back to the restricted end-point once successful.
 
 You can tailor these automatic behavior to suit your need, as shown in this example:
 
