@@ -15,9 +15,11 @@ def load_accounts():
   else:
     print(f"Could not find role account config file {ROLE_ACCOUNT_CONFIG}, no role accounts set up")
     yml = {}
+  return yml
 
 async def token_handler(token):
   # Iterate through all role accounts
+  yml = load_accounts()
   for rolename, roledata in yml.items():
     # If token matches, return the session dict.
     # SHOULD have: uid, email, fullname, roleaccount
