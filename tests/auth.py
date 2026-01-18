@@ -144,6 +144,6 @@ async def test_extended_auth():
 
     # Should always work
     await test_true()
-    
-    with pytest.raises(asfquart.auth.AuthenticationFailed, match=MyR.E_ALWAYS_FALSE):
+
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(MyR.E_ALWAYS_FALSE)):
         await test_false()
