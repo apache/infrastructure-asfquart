@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import time
+import re
 
 import pytest
 import quart
@@ -21,6 +22,10 @@ class MyR(R):
     def false(cls, _session):
         return False, cls.E_ALWAYS_FALSE
 
+def _string_to_re(s):
+    """convert arbitrary string to fullmatch regex"""
+    return re.escape(s) + '$'
+
 @pytest.mark.auth
 async def test_auth_basics():
     app = asfquart.construct("foobar", token_file=None)
@@ -32,10 +37,8 @@ async def test_auth_basics():
 
     # Test with no session, should fail
     quart.session = {}
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await requires_session()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session, should work.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
@@ -65,17 +68,13 @@ async def test_mfa_auth():
 
     # Test MFA with no session, should fail exactly like auth_required
     quart.session = {}
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await requires_mfa()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session without MFA, should fail.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NO_MFA)):
         await requires_mfa()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NO_MFA
 
     # Test with session with MFA, should work.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
@@ -107,27 +106,21 @@ async def test_role_auth():
 
     # Test role with no session, should fail exactly like auth_required
     quart.session = {}
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await test_committer_auth()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NOT_LOGGED_IN
 
     # Test with session , should work
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
     await test_committer_auth()
 
     # Test with a role we don't have, should fail
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_MEMBER)):
         await test_member_auth()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NOT_MEMBER
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
-    try:
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_CHAIR)):
         await test_member_and_chair_auth()
-    except asfquart.auth.AuthenticationFailed as e:
-        assert e.message is R.E_NOT_CHAIR
 
     # Test for either member of chair, should work as we have chair (but not member)
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
