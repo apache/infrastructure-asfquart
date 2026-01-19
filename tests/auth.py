@@ -22,6 +22,19 @@ class MyR(R):
     def false(cls, _session):
         return False, cls.E_ALWAYS_FALSE
 
+class LoneR():
+    """Test auth methods in an independent class"""
+
+    E_ALWAYS_FALSE = "Always False"
+
+    @classmethod
+    def true(cls, _session):
+        return True, ""
+
+    @classmethod
+    def false(cls, _session):
+        return False, cls.E_ALWAYS_FALSE
+
 def _string_to_re(s):
     """convert arbitrary string to fullmatch regex"""
     return re.escape(s) + '$'
@@ -147,3 +160,18 @@ async def test_extended_auth():
 
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(MyR.E_ALWAYS_FALSE)):
         await test_false()
+
+@pytest.mark.auth
+async def test_lone_auth():
+    """Extended auth tests using independent class"""
+
+    # cannot use independent class as a decorator
+    with pytest.raises(TypeError):
+        @asfquart.auth.require(LoneR.true)
+        async def test_true():
+            pass
+
+    with pytest.raises(TypeError):
+        @asfquart.auth.require(LoneR.false)
+        async def test_false():
+            pass
