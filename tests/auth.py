@@ -39,6 +39,10 @@ def _string_to_re(s):
     """convert arbitrary string to fullmatch regex"""
     return re.escape(s) + '$'
 
+def _string_to_re(s):
+    """convert arbitrary string to fullmatch regex"""
+    return re.escape(s) + '$'
+
 @pytest.mark.auth
 async def test_auth_basics():
     app = asfquart.construct("foobar", token_file=None)
