@@ -109,7 +109,7 @@ def require(
           # Require either ASF member OR project chair, but also require MFA enabled in any case.
     """
 
-    async def require_wrapper(func: typing.Callable, all_of=None, any_of=None, *args, **kwargs):
+    async def require_wrapper(original_func: typing.Callable, all_of=None, any_of=None, *args, **kwargs):
         client_session = await session.read()
         errors_list = []
         # First off, test if we have a session at all.
@@ -140,8 +140,8 @@ def require(
         if errors_list:
             raise AuthenticationFailed("\n".join(errors_list))
         if args or kwargs:
-            return await func(*args, **kwargs)
-        return await func()
+            return await original_func(*args, **kwargs)
+        return await original_func()
 
     # If decorator is passed without arguments, func will be an async function
     # In this case, we will return a simple wrapper.
