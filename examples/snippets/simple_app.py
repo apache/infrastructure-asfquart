@@ -6,6 +6,7 @@ import asfquart.auth
 import asfquart.generics
 import asfquart.session
 
+app = None # needed for hypercorn
 
 def my_app() -> asfquart.base.QuartApp:
     # Construct the base app. The oauth gateway at endpoint '/auth' is enabled by default.
@@ -15,7 +16,7 @@ def my_app() -> asfquart.base.QuartApp:
     # Default homepage
     @app.route("/")
     async def homepage():
-        return "Hello!"
+        return "Hello!\n"
 
     # the /secret URI, which shows the session data or forces a login
     @app.route("/secret")
