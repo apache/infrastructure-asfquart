@@ -106,6 +106,7 @@ def write(session_data: dict, app=None):
 
     cookie_id = app.app_id
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
+    dict_copy["cts"] = time.time()   # Set created at timestamp for session length checks later
     dict_copy["uts"] = time.time()   # Set last access timestamp for expiry checks later
     quart.session[cookie_id] = dict_copy
 
