@@ -32,7 +32,7 @@ class ClientSession(dict):
         self.update(self.__dict__.items())
 
 
-async def read(expiry_time=86400*7, max_session_age=0, app=None) -> typing.Optional[ClientSession]:
+async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
 
@@ -44,6 +44,7 @@ async def read(expiry_time=86400*7, max_session_age=0, app=None) -> typing.Optio
     cookie_id = app.app_id
     if cookie_id in quart.session:
         now = time.time()
+        app.config.get("MAX_SESSION_AGE", 0)
         cookie_expiry_deadline = now - expiry_time
         cookie_session_age_limit = now - max_session_age
         session_dict = quart.session[cookie_id]
