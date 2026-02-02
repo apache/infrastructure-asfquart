@@ -32,7 +32,7 @@ class ClientSession(dict):
         self.update(self.__dict__.items())
 
 
-async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
+async def read(expiry_time=86400*7, max_session_age=0, app=None) -> typing.Optional[ClientSession]:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
 
@@ -45,11 +45,16 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     if cookie_id in quart.session:
         now = time.time()
         cookie_expiry_deadline = now - expiry_time
+        cookie_session_age_limit = now - max_session_age
         session_dict = quart.session[cookie_id]
         if isinstance(session_dict, dict):
+            session_create_timestamp = session_dict.get("cts", 0)
             session_update_timestamp = session_dict.get("uts", 0)
             # If a session cookie has expired (not updated/used for seven days), we delete it instead of returning it
             if session_update_timestamp < cookie_expiry_deadline:
+                del quart.session[cookie_id]
+            # If max session lifetime is set and the cookie has exceeded it, we delete it
+            elif max_session_age > 0 and session_create_timestamp < cookie_session_age_limit:
                 del quart.session[cookie_id]
             # If it's still valid, use it
             else:
