@@ -21,12 +21,7 @@ session = await asfquart.session.read(expiry_time=24*3600)  # Require a session 
 assert session, "No session found or session expired"  # If too old or not found, read() returns None
 ```
 
-Maximum session lifetime can be handled by passing the `max_session_age` argument to the `read()` call:
-
-```python
-session = await asfquart.session.read(max_session_age=24*3600)  # Require a session expire after a finite lifetime.
-assert session, "No session found or session expired"  # If too old or not found, read() returns None
-```
+Maximum session lifetime can be handled by passing the `MAX_SESSION_AGE` option in config.yaml.
 
 ## Role account management via declared PAT handler
 Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler
