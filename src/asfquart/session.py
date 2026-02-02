@@ -44,12 +44,18 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     cookie_id = app.app_id
     if cookie_id in quart.session:
         now = time.time()
+        max_session_age = app.config.get("MAX_SESSION_AGE", 0)
         cookie_expiry_deadline = now - expiry_time
+        cookie_session_age_limit = now - max_session_age
         session_dict = quart.session[cookie_id]
         if isinstance(session_dict, dict):
+            session_create_timestamp = session_dict.get("cts", 0)
             session_update_timestamp = session_dict.get("uts", 0)
             # If a session cookie has expired (not updated/used for seven days), we delete it instead of returning it
             if session_update_timestamp < cookie_expiry_deadline:
+                del quart.session[cookie_id]
+            # If max session lifetime is set and the cookie has exceeded it, we delete it
+            elif max_session_age > 0 and session_create_timestamp < cookie_session_age_limit:
                 del quart.session[cookie_id]
             # If it's still valid, use it
             else:
@@ -106,6 +112,7 @@ def write(session_data: dict, app=None):
 
     cookie_id = app.app_id
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
+    dict_copy["cts"] = time.time()   # Set created at timestamp for session length checks later
     dict_copy["uts"] = time.time()   # Set last access timestamp for expiry checks later
     quart.session[cookie_id] = dict_copy
 
