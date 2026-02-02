@@ -14,10 +14,17 @@ async def endpoint_with_session():
    asfquart.session.write(session)  # Store our changes in the user session
 ```
 
-Session timeouts can be handled by passing the `expiry_time` argument to the `read()` call:
+Session timeouts can be handled by passing the `expiry_time` argument (default 7 days) to the `read()` call:
 
 ```python
 session = await asfquart.session.read(expiry_time=24*3600)  # Require a session that has been accessed in the past 24 hours.
+assert session, "No session found or session expired"  # If too old or not found, read() returns None
+```
+
+Maximum session lifetime can be handled by passing the `max_session_age` argument to the `read()` call:
+
+```python
+session = await asfquart.session.read(max_session_age=24*3600)  # Require a session expire after a finite lifetime.
 assert session, "No session found or session expired"  # If too old or not found, read() returns None
 ```
 
