@@ -44,7 +44,7 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     cookie_id = app.app_id
     if cookie_id in quart.session:
         now = time.time()
-        max_session_age = app.config.get("MAX_SESSION_AGE", 0)
+        max_session_age = app.cfg.get("MAX_SESSION_AGE", 0)
         cookie_expiry_deadline = now - expiry_time
         cookie_session_age_limit = now - max_session_age
         session_dict = quart.session[cookie_id]
