@@ -57,5 +57,6 @@ markers = [
     "config: Configuration parsing tests",
     "session: Client session management tests",
     "auth: Authentication/Authorization tests",
+    "generics: Generic endpoint tests",
 ]
 asyncio_mode = "auto"

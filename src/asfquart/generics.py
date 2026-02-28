@@ -40,6 +40,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
+            if login_uri and ((not login_uri.startswith("/")) or login_uri.startswith("//")):
+                return quart.Response(status=400, response="Invalid redirect URI.\n")
             state = secrets.token_hex(16)
             # Save the time we initialized this state and the optional login redirect URI
             pending_states[state] = [time.time(), login_uri]
@@ -55,6 +57,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         elif logout_uri or quart.request.query_string == b"logout":
             asfquart.session.clear()
             if logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
+                if (not logout_uri.startswith("/")) or logout_uri.startswith("//"):
+                    return quart.Response(status=400, response="Invalid redirect URI.\n")
                 return quart.redirect(logout_uri)
             return quart.Response(
                 status=200,
