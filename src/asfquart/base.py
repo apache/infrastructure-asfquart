@@ -163,7 +163,8 @@ class QuartApp(quart.Quart):
         """
 
         # Default PORT is None, but it must be explicitly specified.
-        assert port, "The port must be specified."
+        if not port:
+            raise ValueError("The port must be specified.")
 
         # NOTE: much of the code below is direct from quart/app.py:Quart.run()
         # This local "copy" is to deal with the custom watcher/reloader.

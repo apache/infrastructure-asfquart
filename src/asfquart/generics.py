@@ -81,7 +81,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 ct = aiohttp.client.ClientTimeout(sock_read=15)
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
                     rv = await session.get(OAUTH_URL_CALLBACK % code)
-                    assert rv.status == 200, "Could not verify oauth response."
+                    if rv.status != 200:
+                        return quart.Response(status=403, response="OAuth authentication failed.\n")
                     oauth_data = await rv.json()
                     asfquart.session.write(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
