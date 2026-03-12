@@ -34,7 +34,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
 
     pending_states = {}  # keeps track of pending states and their expiry
 
-    @app.route(uri, methods=["GET", "POST"]))
+    @app.route(uri, methods=["GET", "POST"])
     async def oauth_endpoint():
         # lightweight CSRF protection.
         if quart.request.method == "POST":
