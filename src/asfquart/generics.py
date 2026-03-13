@@ -67,11 +67,10 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 if (not logout_uri.startswith("/")) or logout_uri.startswith("//"):
                     return quart.Response(status=400, response="Invalid redirect URI.\n")
                 return quart.redirect(logout_uri)
-            status = 200
             if quart.request.method == "POST":
-                status = 204
+                return quart.Response(status=204)
             return quart.Response(
-                status=status,
+                status=200,
                 response=f"Client session removed, goodbye!\n",
             )
         else:
