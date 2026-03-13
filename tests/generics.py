@@ -126,6 +126,18 @@ async def test_logout_bare():
 
 
 @pytest.mark.generics
+async def test_logout_post():
+    """Bare POST ?logout should clear session and return 204 with no body."""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        resp = await client.post("/auth?logout")
+        assert resp.status_code == 204
+        body = (await resp.get_data()).decode()
+        assert body == ""
+
+
+@pytest.mark.generics
 async def test_logout_with_valid_redirect():
     """?logout=/goodbye should clear session and redirect."""
     app = _make_app()

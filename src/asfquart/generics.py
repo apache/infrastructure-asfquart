@@ -34,8 +34,15 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
 
     pending_states = {}  # keeps track of pending states and their expiry
 
-    @app.route(uri)
+    @app.route(uri, methods=["GET", "POST"])
     async def oauth_endpoint():
+        # lightweight CSRF protection.
+        if quart.request.method == "POST":
+            if quart.request.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "same-site"):
+                return quart.Response(
+                    status=403,
+                    response="CSRF Protection\n"
+                )
         # Init oauth login
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
@@ -60,6 +67,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 if (not logout_uri.startswith("/")) or logout_uri.startswith("//"):
                     return quart.Response(status=400, response="Invalid redirect URI.\n")
                 return quart.redirect(logout_uri)
+            if quart.request.method == "POST":
+                return quart.Response(status=204)
             return quart.Response(
                 status=200,
                 response=f"Client session removed, goodbye!\n",
