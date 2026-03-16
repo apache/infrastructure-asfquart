@@ -41,14 +41,19 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
             if quart.request.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "same-site"):
                 return quart.Response(
                     status=403,
-                    response="CSRF Protection\n"
+                    response="CSRF Protection\n",
+                    content_type="text/plain; charset=utf-8"
                 )
         # Init oauth login
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
             if login_uri and ((not login_uri.startswith("/")) or login_uri.startswith("//")):
-                return quart.Response(status=400, response="Invalid redirect URI.\n")
+                return quart.Response(
+                    status=400,
+                    response="Invalid redirect URI.\n",
+                    content_type="text/plain; charset=utf-8"
+                )
             state = secrets.token_hex(16)
             # Save the time we initialized this state and the optional login redirect URI
             pending_states[state] = [time.time(), login_uri]
@@ -65,7 +70,11 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
             asfquart.session.clear()
             if logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
                 if (not logout_uri.startswith("/")) or logout_uri.startswith("//"):
-                    return quart.Response(status=400, response="Invalid redirect URI.\n")
+                    return quart.Response(
+                        status=400,
+                        response="Invalid redirect URI.\n",
+                        content_type="text/plain; charset=utf-8"
+                    )
                 return quart.redirect(logout_uri)
             if quart.request.method == "POST":
                 return quart.Response(status=204)
@@ -82,6 +91,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     return quart.Response(
                         status=403,
                         response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
+                        content_type="text/plain; charset=utf-8"
                     )
                 redirect_uri = pending_states[state][1]
                 pending_states.pop(
@@ -91,7 +101,11 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
                     rv = await session.get(OAUTH_URL_CALLBACK % code)
                     if rv.status != 200:
-                        return quart.Response(status=403, response="OAuth authentication failed.\n")
+                        return quart.Response(
+                            status=403,
+                            response="OAuth authentication failed.\n",
+                            content_type="text/plain; charset=utf-8"
+                        )
                     oauth_data = await rv.json()
                     asfquart.session.write(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
@@ -101,12 +115,14 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     return quart.Response(
                         status=200,
                         response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
-                        headers={"Refresh": f"0; url={redirect_uri}"}
+                        headers={"Refresh": f"0; url={redirect_uri}"},
+                        content_type="text/plain; charset=utf-8"
                     )
                 # Otherwise, just say hi
                 return quart.Response(
                     status=200,
                     response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
+                    content_type="text/plain; charset=utf-8"
                 )
             else:  # Just spit out existing session if it's there
                 client_session = await asfquart.session.read()
@@ -115,6 +131,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 return quart.Response(
                     status=404,
                     response=f"No active session found.\n",
+                    content_type="text/plain; charset=utf-8"
                 )
 
 
@@ -146,4 +163,8 @@ def enforce_login(app, redirect_uri=DEFAULT_OAUTH_URI):
             quoted_path = urllib.parse.quote(full_path)
             return quart.redirect(f"{redirect_uri}?login={quoted_path}")
         # If we have a session, but still no access, just say so in plain text.
-        return quart.Response(status=error.errorcode, response=error.message)
+        return quart.Response(
+            status=error.errorcode,
+            response=error.message,
+            content_type="text/plain; charset=utf-8"
+        )

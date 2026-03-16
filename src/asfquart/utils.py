@@ -38,6 +38,7 @@ async def formdata():
             return quart.Response(
                 status=413,
                 response=f"Request content length ({quart.request.content_length} bytes) is larger than what is permitted for form data ({max_size} bytes)!",
+                content_type="text/plain; charset=utf-8"
             )
     if xform:
         form_data.update(xform.to_dict())
