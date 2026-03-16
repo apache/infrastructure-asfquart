@@ -397,7 +397,11 @@ def construct(
         if not quart.request.body._complete.is_set():  # pylint: disable=protected-access
             async for _data in quart.request.body:
                 pass
-        return quart.Response(status=error.errorcode, response=error.message)
+        return quart.Response(
+            status=error.errorcode,
+            response=error.message,
+            content_type="text/plain; charset=utf-8"
+        )
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
