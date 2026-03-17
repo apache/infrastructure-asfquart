@@ -188,11 +188,14 @@ class QuartApp(quart.Quart):
             shutdown_trigger=trigger,
         )
 
+        # If certfile is None then https.
+        protocol = "https" if certfile is not None else "http"
+
         ### LOG/print some info about the app starting?
         print(f' * Serving Quart app "{self.app_id}"')
         print(f" * Debug mode: {self.debug}")
         print(" * Using reloader: CUSTOM")
-        print(f" * Running on http://{host}:{port}")
+        print(f" * Running on {protocol}://{host}:{port}")
         print(" * ... CTRL + C to quit")
 
         # Ready! Start running the app.
