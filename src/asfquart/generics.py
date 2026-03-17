@@ -54,6 +54,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     response="Invalid redirect URI.\n",
                     content_type="text/plain; charset=utf-8"
                 )
+            asfquart.session.clear()
             state = secrets.token_hex(16)
             # Save the time we initialized this state and the optional login redirect URI
             pending_states[state] = [time.time(), login_uri]
@@ -107,6 +108,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                             content_type="text/plain; charset=utf-8"
                         )
                     oauth_data = await rv.json()
+                    asfquart.session.clear()
                     asfquart.session.write(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
