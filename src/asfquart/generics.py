@@ -68,20 +68,24 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
             asfquart.session.clear()
-            if logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
-                if (not logout_uri.startswith("/")) or logout_uri.startswith("//"):
-                    return quart.Response(
-                        status=400,
-                        response="Invalid redirect URI.\n",
-                        content_type="text/plain; charset=utf-8"
-                    )
-                return quart.redirect(logout_uri)
-            if quart.request.method == "POST":
-                return quart.Response(status=204)
-            return quart.Response(
-                status=200,
-                response=f"Client session removed, goodbye!\n",
-            )
+            if logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
+                response = quart.Response(
+                    status=400,
+                    response="Invalid redirect URI.\n",
+                    content_type="text/plain; charset=utf-8"
+                )
+            elif logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
+                response = quart.redirect(logout_uri)
+            elif quart.request.method == "POST":
+                response = quart.Response(status=204)
+            else:
+                response = quart.Response(
+                    status=200,
+                    response=f"Client session removed, goodbye!\n",
+                    content_type="text/plain; charset=utf-8"
+                )
+            response.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
+            return response
         else:
             code = quart.request.args.get("code")
             state = quart.request.args.get("state")
