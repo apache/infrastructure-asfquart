@@ -76,6 +76,7 @@ class QuartApp(quart.Quart):
             app_dir: str | None = None,
             cfg_file: str | None = None,
             token_file: str | None = TOKEN_FNAME,
+            secret_key: str | None = None,
             *args,
             **kw
     ):
@@ -87,6 +88,9 @@ class QuartApp(quart.Quart):
             cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
             token_file: Optional token file name, defaults to ``apptoken.txt``, when setting to None,
                         the app secret will not be persisted.
+            secret_key: Optional secret key. If token_file is None, this will be used as the key, allowing the caller
+                        to ensure the secret is only persisted when necessary. The key should be generated using a
+                        suitably secure function such as secrets.token_hex()
         """
         super().__init__(app_id, *args, **kw)
 
@@ -114,7 +118,10 @@ class QuartApp(quart.Quart):
         self.token_path = _token_filename
 
         if _token_filename is None:
-            self.secret_key = secrets.token_hex()
+            if secret_key is None:
+                self.secret_key = secrets.token_hex()
+            else:
+                self.secret_key =secret_key
         else:
             # Read, or set and write, the application secret token for
             # session encryption. We prefer permanence for the session
@@ -365,6 +372,7 @@ def construct(
     app_dir: str | None = None,
     cfg_file: str | None = None,
     token_file: str | None = TOKEN_FNAME,
+    secret_key: str | None = None,
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
@@ -378,6 +386,9 @@ def construct(
         cfg_file: Optional config file name, defaults to ``config.yaml`` if none is provided.
         token_file: Optional token file name, defaults to ``apptoken.txt``, when setting to None,
             the app secret will not be persisted.
+        secret_key: Optional secret key. If token_file is None, this will be used as the key, allowing the caller
+                    to ensure the secret is only persisted when necessary. The key should be generated using a
+                    suitably secure function such as secrets.token_hex()
         oauth: Optional, configure OAuth endpoint, defaults to ``true``, to use a different
             oauth URI than the default ``/auth``, specify the URI in the oauth argument,
             for instance: asfquart.construct("myapp", oauth="/session").
@@ -392,7 +403,7 @@ def construct(
     setup_oauth = oauth
     force_auth_redirect = force_login and setup_oauth
 
-    app = QuartApp(name, app_dir, cfg_file, token_file, *args, **kw)
+    app = QuartApp(name, app_dir, cfg_file, token_file, secret_key, *args, **kw)
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
