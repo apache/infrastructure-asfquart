@@ -84,6 +84,8 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
                 else:
                     print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
             case "basic":  # Basic LDAP auth - will need to grab info from LDAP
+                if not app.basic_auth:
+                    raise base.ASFQuartException("Basic authentication is not enabled", errorcode=401)
                 if ldap.LDAP_SUPPORTED:
                     try:
                         auth_user = quart.request.authorization.parameters["username"]
