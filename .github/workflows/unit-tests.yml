@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0 # need all versions to be able to access server tree commit logs
           persist-credentials: false
       - name: Install uv and set the Python version
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true # enable built-in caching of uv

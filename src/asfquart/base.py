@@ -103,6 +103,7 @@ class QuartApp(quart.Quart):
 
         # token handler callback for PATs - see docs/sessions.md
         self.token_handler = None  # Default to no PAT handler available.
+        self.basic_auth = True
 
         if token_file is not None:
             # Path.__truediv__ internally handles the case of absolute / relative path segments
@@ -368,6 +369,7 @@ def construct(
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
+    basic_auth: bool = True,
     **kw
 ):
     """Construct an ASFQuart web application.
@@ -383,6 +385,7 @@ def construct(
             for instance: asfquart.construct("myapp", oauth="/session").
         force_login: Optional, enforces redirect to the oauth provider when a user
             accesses a restricted page, defaults to ``true``.
+        basic_auth: Optional, enables HTTP Basic authentication via LDAP, defaults to ``true``.
     """
 
     # By default, we will set up OAuth and force login redirect on auth failure
@@ -393,6 +396,7 @@ def construct(
     force_auth_redirect = force_login and setup_oauth
 
     app = QuartApp(name, app_dir, cfg_file, token_file, *args, **kw)
+    app.basic_auth = basic_auth
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
     async def handle_exception(error):
