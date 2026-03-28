@@ -4,7 +4,6 @@
 import itertools
 
 import pytest
-import quart
 
 import asfquart
 
