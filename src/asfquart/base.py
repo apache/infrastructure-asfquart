@@ -140,7 +140,7 @@ class QuartApp(quart.Quart):
                     # ensure we don't have umask overriding what we want to achieve.
                     umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
                     try:
-                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE, encoding='utf-8')
+                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
                     finally:
                         os.umask(umask_original)  # reset umask to the original setting
                     with open(fd, "w", encoding='utf-8') as sfile:
