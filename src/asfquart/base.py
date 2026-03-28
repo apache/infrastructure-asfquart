@@ -129,7 +129,7 @@ class QuartApp(quart.Quart):
                     sys.stderr.write(
                         f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
                     )
-                self.secret_key = open(_token_filename).read()
+                self.secret_key = open(_token_filename, encoding='utf-8').read()
             else:  # No token file yet, try to write, warn if we cannot
                 self.secret_key = secrets.token_hex()
                 ### TBD: throw the PermissionError once we stabilize how to locate
@@ -140,10 +140,10 @@ class QuartApp(quart.Quart):
                     # ensure we don't have umask overriding what we want to achieve.
                     umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
                     try:
-                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
+                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE, encoding='utf-8')
                     finally:
                         os.umask(umask_original)  # reset umask to the original setting
-                    with open(fd, "w") as sfile:
+                    with open(fd, "w", encoding='utf-8') as sfile:
                         sfile.write(self.secret_key)
                 except PermissionError:
                     LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
@@ -412,7 +412,7 @@ def construct(
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
-        app.cfg.update(yaml.safe_load(open(app.cfg_path)))
+        app.cfg.update(yaml.safe_load(open(app.cfg_path, encoding='utf-8')))
 
     # Provide our standard filename argument converter.
     import asfquart.utils
