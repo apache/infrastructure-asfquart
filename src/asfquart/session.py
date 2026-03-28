@@ -102,7 +102,7 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
                     except (binascii.Error, ValueError, KeyError) as e:
                         # binascii/ValueError == bad base64 auth string
                         # KeyError = missing username or password
-                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400)
+                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400) from e
             case _: # for match, this is the default
                 raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
