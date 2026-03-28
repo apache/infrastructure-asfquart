@@ -90,17 +90,16 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
             code = quart.request.args.get("code")
             state = quart.request.args.get("state")
             if code and state:  # Callback from oauth, complete flow.
-                if state not in pending_states or pending_states[state][0] < (time.time() - workflow_timeout):
-                    pending_states.pop(state, None)  # safe pop
+                # grab the state data before using it
+                # This ensures it can only be used once
+                state_data = pending_states.pop(state, None)  # safe pop
+                if state_data is None or state_data[0] < (time.time() - workflow_timeout):                    
                     return quart.Response(
                         status=403,
                         response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
                         content_type="text/plain; charset=utf-8"
                     )
-                redirect_uri = pending_states[state][1]
-                pending_states.pop(
-                    state
-                )  # Pop the state from pending. We do this straight away to avoid timing attacks
+                redirect_uri = state_data[1]
                 ct = aiohttp.client.ClientTimeout(sock_read=15)
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
                     rv = await session.get(OAUTH_URL_CALLBACK % code)
