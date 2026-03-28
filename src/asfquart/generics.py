@@ -81,7 +81,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
             else:
                 response = quart.Response(
                     status=200,
-                    response=f"Client session removed, goodbye!\n",
+                    response="Client session removed, goodbye!\n",
                     content_type="text/plain; charset=utf-8"
                 )
             response.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
@@ -133,7 +133,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     return client_session
                 return quart.Response(
                     status=404,
-                    response=f"No active session found.\n",
+                    response="No active session found.\n",
                     content_type="text/plain; charset=utf-8"
                 )
 
