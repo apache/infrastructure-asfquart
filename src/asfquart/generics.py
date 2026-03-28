@@ -143,7 +143,6 @@ def enforce_login(app, redirect_uri=DEFAULT_OAUTH_URI):
     without being logged in. Only redirects if there is no active user session. On success, the client
     is redirected back to the origin page that was restricted. If it is still restricted, the client
     will instead see an error message."""
-    import asfquart.auth
 
     @app.errorhandler(asfquart.auth.AuthenticationFailed)
     async def auth_redirect(error):
