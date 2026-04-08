@@ -104,6 +104,7 @@ class QuartApp(quart.Quart):
         # token handler callback for PATs - see docs/sessions.md
         self.token_handler = None  # Default to no PAT handler available.
         self.basic_auth = True
+        self.sessions = None
 
         if token_file is not None:
             # Path.__truediv__ internally handles the case of absolute / relative path segments

@@ -67,7 +67,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
 
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
-            asfquart.session.clear()
+            await asfquart.session.aclear()
             if logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
                 response = quart.Response(
                     status=400,
@@ -110,7 +110,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                             content_type="text/plain; charset=utf-8"
                         )
                     oauth_data = await rv.json()
-                    asfquart.session.write(oauth_data)
+                    await asfquart.session.awrite(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go
@@ -129,7 +129,9 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 )
             else:  # Just spit out existing session if it's there
                 client_session = await asfquart.session.read()
-                if isinstance(client_session, asfquart.session.ClientSession):
+                if client_session is not None:
+                    if hasattr(client_session, "model_dump"):
+                        return client_session.model_dump()
                     return client_session
                 return quart.Response(
                     status=404,

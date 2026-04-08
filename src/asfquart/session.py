@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """ASFQuart - User session methods and decorators"""
-import typing
 
 from . import base, ldap
+import hashlib
+import secrets
 import time
 import binascii
 
-import quart.sessions
+import quart
 import asfquart
 import asyncio
+
+
+def _generate_sid() -> str:
+    return secrets.token_urlsafe(20)
+
+
+def _hash_sid(sid: str) -> str:
+    return hashlib.sha3_256(sid.encode("utf-8")).hexdigest()
 
 
 class ClientSession(dict):
@@ -32,7 +41,7 @@ class ClientSession(dict):
         self.update(self.__dict__.items())
 
 
-async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
+async def read(expiry_time=86400*7, app=None):
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
 
@@ -43,6 +52,17 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
     # two asfquart apps running on the same hostname.
     cookie_id = app.app_id
     if cookie_id in quart.session:
+        if app.sessions:
+            entry = quart.session[cookie_id]
+            sid = entry.get("sid") if isinstance(entry, dict) else None
+            if not isinstance(sid, str) or not sid:
+                del quart.session[cookie_id]
+                return None
+            stored = await app.sessions.validate(_hash_sid(sid))
+            if stored is None:
+                del quart.session[cookie_id]
+                return None
+            return stored
         now = time.time()
         max_session_age = app.cfg.get("MAX_SESSION_AGE", 0)
         cookie_expiry_deadline = now - expiry_time
@@ -108,10 +128,13 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
 
 
 def write(session_data: dict, app=None):
-    """Sets a cookie-based user session for this app"""
+    """Sets a cookie-based user session for this app."""
 
     if app is None:
         app = asfquart.APP
+
+    if app.sessions:
+        raise RuntimeError("write() cannot be used with an async session store; use awrite() instead")
 
     cookie_id = app.app_id
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
@@ -120,10 +143,79 @@ def write(session_data: dict, app=None):
     quart.session[cookie_id] = dict_copy
 
 
-def clear(app=None):
-    """Clears a session"""
+async def awrite(session_data: dict, app=None):
+    """Async version of write() for use with async session stores."""
 
     if app is None:
         app = asfquart.APP
 
-    quart.session.pop(app.app_id, None)  # Safely pop the session if it's there.
+    cookie_id = app.app_id
+    if app.sessions:
+        entry = quart.session.get(cookie_id)
+        if isinstance(entry, dict):
+            old_sid = entry.get("sid")
+            if isinstance(old_sid, str) and old_sid:
+                await app.sessions.destroy(_hash_sid(old_sid))
+        sid = _generate_sid()
+        await app.sessions.create(_hash_sid(sid), session_data)
+        quart.session[cookie_id] = {"sid": sid}
+    else:
+        dict_copy = session_data.copy()
+        dict_copy["cts"] = time.time()
+        dict_copy["uts"] = time.time()
+        quart.session[cookie_id] = dict_copy
+
+
+def clear(app=None):
+    """Clears a session."""
+
+    if app is None:
+        app = asfquart.APP
+
+    if app.sessions:
+        raise RuntimeError("clear() cannot be used with an async session store; use aclear() instead")
+
+    quart.session.pop(app.app_id, None)
+
+
+async def aclear(app=None):
+    """Async version of clear() for use with async session stores."""
+
+    if app is None:
+        app = asfquart.APP
+
+    cookie_id = app.app_id
+    if app.sessions:
+        entry = quart.session.get(cookie_id)
+        if isinstance(entry, dict):
+            sid = entry.get("sid")
+            if isinstance(sid, str) and sid:
+                await app.sessions.destroy(_hash_sid(sid))
+    quart.session.pop(cookie_id, None)
+
+
+async def areplace(session_object, app=None):
+    """Replaces the current session with a pre-constructed session object."""
+
+    if app is None:
+        app = asfquart.APP
+
+    if not app.sessions:
+        raise RuntimeError("areplace() requires an async session store")
+
+    cookie_id = app.app_id
+    new_sid = _generate_sid()
+    new_hsid = _hash_sid(new_sid)
+    old_hsid = None
+    entry = quart.session.get(cookie_id)
+    if isinstance(entry, dict):
+        old_sid = entry.get("sid")
+        if isinstance(old_sid, str) and old_sid:
+            old_hsid = _hash_sid(old_sid)
+    if hasattr(app.sessions, "replace"):
+        await app.sessions.replace(old_hsid, new_hsid, session_object)
+    else:
+        if old_hsid is not None:
+            await app.sessions.destroy(old_hsid)
+        await app.sessions.register(new_hsid, session_object)
+    quart.session[cookie_id] = {"sid": new_sid}
