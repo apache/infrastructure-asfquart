@@ -45,7 +45,7 @@ test = [
 Repository = "https://github.com/apache/infrastructure-asfquart"
 
 [build-system]
-requires = ["uv_build>=0.9.11,<0.10.0"]
+requires = ["uv_build>=0.9.11,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
