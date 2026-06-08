@@ -15,6 +15,8 @@ import asfquart  # implies .session
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+# Enforce that the callback to the relying party will be https
+OAUTH_ENFORCE_HTTPS = True
 DEFAULT_OAUTH_URI = "/auth"
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
@@ -57,7 +59,9 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
             state = secrets.token_hex(16)
             # Save the time we initialized this state and the optional login redirect URI
             pending_states[state] = [time.time(), login_uri]
-            callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
+            callback_host = quart.request.host_url
+            if OAUTH_ENFORCE_HTTPS:
+                callback_host = callback_host.replace("http://", "https://")
             callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
                 callback_host,
                 f"{uri}?state={state}",
