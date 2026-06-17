@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
+import jwt
+from jwt import PyJWKClient
 import secrets
 import urllib
 import urllib.parse
@@ -15,6 +17,16 @@ import asfquart  # implies .session
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+
+# Enforce that the callback to the relying party will be https
+OAUTH_ENFORCE_HTTPS = True
+
+# Options for full OAuth2 validation
+OAUTH_CLIENT_ID = None
+OAUTH_CLIENT_SECRET = None
+OAUTH_URL_JWKS = None
+OAUTH_ISSUER = None
+
 DEFAULT_OAUTH_URI = "/auth"
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
@@ -55,14 +67,24 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     content_type="text/plain; charset=utf-8"
                 )
             state = secrets.token_hex(16)
+            callback_host = quart.request.host_url
+            if OAUTH_ENFORCE_HTTPS:
+                callback_host = callback_host.replace("http://", "https://")
+            if OAUTH_CLIENT_ID:
+                callback_url = urllib.parse.urljoin(
+                    callback_host,
+                    f"{uri}",
+                )
+            else:
+                callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
+                    callback_host,
+                    f"{uri}?state={state}",
+                )
             # Save the time we initialized this state and the optional login redirect URI
-            pending_states[state] = [time.time(), login_uri]
-            callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
-            callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
-                callback_host,
-                f"{uri}?state={state}",
-            )
+            pending_states[state] = [time.time(), login_uri, callback_url]
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
+            if OAUTH_CLIENT_ID:
+                redirect_url = redirect_url + "&response_type=code&scope=openid&client_id=" + OAUTH_CLIENT_ID
             return quart.redirect(redirect_url)
 
         # Log out
@@ -93,32 +115,60 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 # grab the state data before using it
                 # This ensures it can only be used once
                 state_data = pending_states.pop(state, None)  # safe pop
-                if state_data is None or state_data[0] < (time.time() - workflow_timeout):                    
+                if state_data is None or state_data[0] < (time.time() - workflow_timeout):
                     return quart.Response(
                         status=403,
                         response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
                         content_type="text/plain; charset=utf-8"
                     )
-                redirect_uri = state_data[1]
+                post_login_redirect_uri = state_data[1]
+                original_redirect_uri = state_data[2]
                 ct = aiohttp.client.ClientTimeout(sock_read=15)
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
-                    rv = await session.get(OAUTH_URL_CALLBACK % code)
+                    if OAUTH_CLIENT_SECRET:
+                        auth = aiohttp.BasicAuth(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET)
+                        data = {
+                            'grant_type': "authorization_code",
+                            'redirect_uri': original_redirect_uri,
+                            'code': code
+                        }
+                        rv = await session.post(OAUTH_URL_CALLBACK, auth=auth, data=data)
+                    else:
+                        rv = await session.get(OAUTH_URL_CALLBACK % code)
                     if rv.status != 200:
+                        # TODO there is likely useful diagnostic
+                        # information in the response body, where
+                        # do we log that?
                         return quart.Response(
                             status=403,
                             response="OAuth authentication failed.\n",
                             content_type="text/plain; charset=utf-8"
                         )
-                    oauth_data = await rv.json()
+
+                    if OAUTH_CLIENT_SECRET:
+                        token = await rv.json()
+                        jwks_client = PyJWKClient(OAUTH_URL_JWKS)
+                        id_token = token["id_token"]
+                        signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+                        oauth_data = jwt.decode(
+                          id_token,
+                          signing_key.key,
+                          algorithms=["RS256"],
+                          audience=OAUTH_CLIENT_ID,
+                          issuer=OAUTH_ISSUER,
+                        )
+                    else:
+                        oauth_data = await rv.json()
+
                     asfquart.session.write(oauth_data)
-                if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
+                if post_login_redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go
                     # someplace else. This counts as a samesite request.
                     return quart.Response(
                         status=200,
                         response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
-                        headers={"Refresh": f"0; url={redirect_uri}"},
+                        headers={"Refresh": f"0; url={post_login_redirect_uri}"},
                         content_type="text/plain; charset=utf-8"
                     )
                 # Otherwise, just say hi

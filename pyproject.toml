@@ -22,6 +22,7 @@ description = "ASF Quart Framework"
 dependencies = [
     "aiohttp>=3.9.2,<4",
     "PyYAML>=6.0.1,<7",
+    "PyJWT>=2.13.0,<3",
     "quart>=0.20.0,<1",
     "ezt>=1.1,<2",
     "asfpy>=0.56,<1",

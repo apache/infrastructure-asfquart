@@ -213,6 +213,7 @@ dependencies = [
     { name = "easydict" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "ezt" },
+    { name = "pyjwt" },
     { name = "pyyaml" },
     { name = "quart" },
     { name = "watchfiles" },
@@ -239,6 +240,7 @@ requires-dist = [
     { name = "easydict", specifier = ">=1.13,<2" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.1.0" },
     { name = "ezt", specifier = ">=1.1,<2" },
+    { name = "pyjwt", specifier = ">=2.13.0,<3" },
     { name = "pyyaml", specifier = ">=6.0.1,<7" },
     { name = "quart", specifier = ">=0.20.0,<1" },
     { name = "watchfiles", specifier = ">=1.0.0,<2" },
@@ -1303,6 +1305,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fe/cf/d2d3b9f5699fb1e4615c8e32ff220203e43b248e1dfcc6736ad9057731ca/pycparser-2.23.tar.gz", hash = "sha256:78816d4f24add8f10a06d6f05b4d424ad9e96cfebf68a4ddc99c65c0720d00c2", size = 173734, upload-time = "2025-09-09T13:23:47.91Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/e3/59cd50310fc9b59512193629e1984c1f95e5c8ae6e5d8c69532ccc65a7fe/pycparser-2.23-py3-none-any.whl", hash = "sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934", size = 118140, upload-time = "2025-09-09T13:23:46.651Z" },
+]
+
+[[package]]
+name = "pyjwt"
+version = "2.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
 ]
 
 [[package]]
