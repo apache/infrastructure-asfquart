@@ -22,12 +22,12 @@ class Requirements:
     @classmethod
     def mfa_enabled(cls, client_session: session.ClientSession):
         """Tests for MFA enabled in the client session"""
-        return isinstance(client_session, session.ClientSession) and client_session.mfa is True, cls.E_NO_MFA
+        return client_session.mfa is True, cls.E_NO_MFA
 
     @classmethod
     def committer(cls, client_session: session.ClientSession):
         """Tests for whether the user is a committer on any project"""
-        return isinstance(client_session, session.ClientSession), cls.E_NOT_LOGGED_IN
+        return client_session is not None, cls.E_NOT_LOGGED_IN
 
     @classmethod
     def member(cls, client_session: session.ClientSession):
@@ -113,7 +113,7 @@ def require(
         client_session = await session.read()
         errors_list = []
         # First off, test if we have a session at all.
-        if not isinstance(client_session, dict):
+        if client_session is None:
             raise AuthenticationFailed(Requirements.E_NOT_LOGGED_IN)
 
         # Test all_of
