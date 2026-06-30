@@ -5,6 +5,7 @@ import typing
 from . import base, ldap
 import time
 import binascii
+import inspect
 
 import quart.sessions
 import asfquart
@@ -73,7 +74,7 @@ async def read(expiry_time=86400*7, app=None) -> typing.Optional[ClientSession]:
                         raise TypeError("app.token_handler is not a callable function.")
                     session_dict = None  # Blank, in case we don't have a working callback.
                     # Async token handler?
-                    if asyncio.iscoroutinefunction(app.token_handler):
+                    if inspect.iscoroutinefunction(app.token_handler):
                         session_dict = await app.token_handler(quart.request.authorization.token)
                     # Sync handler?
                     elif callable(app.token_handler):

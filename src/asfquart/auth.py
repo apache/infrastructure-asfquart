@@ -5,6 +5,7 @@ import functools
 import typing
 import asyncio
 import collections.abc
+import inspect
 
 class Requirements:
     """Various pre-defined access requirements"""
@@ -145,14 +146,14 @@ def require(
 
     # If decorator is passed without arguments, func will be an async function
     # In this case, we will return a simple wrapper.
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
         return functools.wraps(func)(functools.partial(require_wrapper, func))
 
     # If passed with args, we construct a "double wrapper" and return it.
     def require_with_args(original_func: typing.Callable):
         # If decorated without keywords, func disappears in the outer scope and is replaced with all_of,
         # so we account for this by swapping around the arguments just in time if needed.
-        if not asyncio.iscoroutinefunction(func):
+        if not inspect.iscoroutinefunction(func):
             return functools.wraps(original_func)(
                 functools.partial(
                     require_wrapper,
