@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
+import hashlib
+import hmac
 import secrets
 import urllib
 import urllib.parse
@@ -16,6 +18,20 @@ import asfquart  # implies .session
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"
+
+# The pending login is tied to the browser that started it, via this cookie.
+# SameSite=Lax is required: the callback is a top level navigation from the
+# OAuth provider, and a Strict cookie is not sent when the provider is on a
+# different site. Deployments where the provider and the app share a site may
+# set STATE_COOKIE_SAMESITE = "Strict".
+STATE_COOKIE_NAME = "asfquart-oauth-state"
+STATE_COOKIE_SAMESITE = "Lax"
+STATE_COOKIE_SECURE = True
+
+
+def _browser_digest(browser):
+    return hashlib.sha256(browser.encode("utf-8")).hexdigest()
+
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
@@ -55,15 +71,27 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                     content_type="text/plain; charset=utf-8"
                 )
             state = secrets.token_hex(16)
-            # Save the time we initialized this state and the optional login redirect URI
-            pending_states[state] = [time.time(), login_uri]
+            browser = quart.request.cookies.get(STATE_COOKIE_NAME) or secrets.token_hex(16)
+            # Save the time we initialized this state, the optional login redirect URI,
+            # and a digest of the browser cookie that is allowed to complete this login
+            pending_states[state] = [time.time(), login_uri, _browser_digest(browser)]
             callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
             callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
                 callback_host,
                 f"{uri}?state={state}",
             )
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
-            return quart.redirect(redirect_url)
+            response = quart.redirect(redirect_url)
+            response.set_cookie(
+                STATE_COOKIE_NAME,
+                browser,
+                max_age=workflow_timeout,
+                secure=STATE_COOKIE_SECURE,
+                httponly=True,
+                samesite=STATE_COOKIE_SAMESITE,
+                path=uri,
+            )
+            return response
 
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
@@ -93,7 +121,11 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 # grab the state data before using it
                 # This ensures it can only be used once
                 state_data = pending_states.pop(state, None)  # safe pop
-                if state_data is None or state_data[0] < (time.time() - workflow_timeout):                    
+                # The login may only be completed by the browser that started it
+                browser = quart.request.cookies.get(STATE_COOKIE_NAME) or ""
+                if (state_data is not None) and (not hmac.compare_digest(state_data[2], _browser_digest(browser))):
+                    state_data = None
+                if (state_data is None) or (state_data[0] < (time.time() - workflow_timeout)):
                     return quart.Response(
                         status=403,
                         response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
