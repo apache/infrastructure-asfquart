@@ -9,6 +9,39 @@ import quart
 import asfquart.auth
 from asfquart.auth import Requirements as R
 
+class MyR(R):
+    """Test auth methods in a Requirements subclass"""
+
+    E_ALWAYS_FALSE = "Always False"
+
+    @classmethod
+    def true(cls, _session):
+        return True, ""
+
+    @classmethod
+    def false(cls, _session):
+        return False, cls.E_ALWAYS_FALSE
+
+class LoneR():
+    """Test auth methods in an independent class"""
+
+    E_ALWAYS_FALSE = "Always False"
+
+    @classmethod
+    def true(cls, _session):
+        return True, ""
+
+    @classmethod
+    def false(cls, _session):
+        return False, cls.E_ALWAYS_FALSE
+
+def _string_to_re(s):
+    """convert arbitrary string to fullmatch regex"""
+    return re.escape(s) + '$'
+
+def _string_to_re(s):
+    """convert arbitrary string to fullmatch regex"""
+    return re.escape(s) + '$'
 
 def _string_to_re(s):
     """convert arbitrary string to fullmatch regex"""
@@ -117,3 +150,36 @@ async def test_role_auth():
     # Test for both member and chair, when we are both. should work.
     quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
     await test_member_and_chair_auth()
+
+@pytest.mark.auth
+async def test_extended_auth():
+    """Extended auth tests"""
+
+    @asfquart.auth.require(MyR.true)
+    async def test_true():
+        pass
+
+    @asfquart.auth.require(MyR.false)
+    async def test_false():
+        pass
+
+    # Should always work
+    await test_true()
+
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(MyR.E_ALWAYS_FALSE)):
+        await test_false()
+
+@pytest.mark.auth
+async def test_lone_auth():
+    """Extended auth tests using independent class"""
+
+    # cannot use independent class as a decorator
+    with pytest.raises(TypeError):
+        @asfquart.auth.require(LoneR.true)
+        async def test_true():
+            pass
+
+    with pytest.raises(TypeError):
+        @asfquart.auth.require(LoneR.false)
+        async def test_false():
+            pass
