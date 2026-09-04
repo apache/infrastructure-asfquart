@@ -25,18 +25,35 @@ class ClientSession(dict):
         """Initializes a client session from a raw dict. ClientSession is a subclassed dict, so that
         we can send it to quart in a format it can render."""
         super().__init__()
-        self.uid = raw_data.get("uid")
-        self.dn = raw_data.get("dn")
-        self.fullname = raw_data.get("fullname")
-        self.email = raw_data.get("email", f"{self.uid}@apache.org")
-        self.isMember = raw_data.get("isMember", False)
-        self.isChair = raw_data.get("isChair", False)
-        self.isRoot = raw_data.get("isRoot", False)
-        self.committees = raw_data.get("pmcs", [])
-        self.projects = raw_data.get("projects", [])
-        self.mfa = raw_data.get("mfa", False)
-        self.isRole = raw_data.get("roleaccount", False)
-        self.metadata = raw_data.get("metadata", {})  # This can contain whatever specific metadata the app needs
+        if "sub" in raw_data:
+            # Authenticated directly via https://mfa.apache.org
+            self.uid = raw_data.get("nickname")
+            self.fullname = raw_data.get("given_name")
+            self.email = raw_data.get("email", f"{self.uid}@apache.org")
+            groups = raw_data.get("groups", [])
+            self.committees = [ group[:-4] for group in groups if group.endswith("-pmc") ]
+            self.projects = [ group for group in groups if '-' not in group ]
+            self.isMember = "member-meta" in groups
+            self.isRoot = "infrastructure-root" in groups
+            self.mfa = "mfa" in raw_data.get("amr", [])
+            # Role accounts use tokens, not OAuth
+            # https://github.com/apache/infrastructure-asfquart/blob/main/docs/sessions.md#role-account-management-via-declared-pat-handler
+            self.isRole = False
+        else:
+            # Authenticated via https://oauth.apache.org
+            self.uid = raw_data.get("uid")
+            self.dn = raw_data.get("dn")
+            self.fullname = raw_data.get("fullname")
+            self.email = raw_data.get("email", f"{self.uid}@apache.org")
+            self.isMember = raw_data.get("isMember", False)
+            self.isChair = raw_data.get("isChair", False)
+            self.isRoot = raw_data.get("isRoot", False)
+            self.committees = raw_data.get("pmcs", [])
+            self.projects = raw_data.get("projects", [])
+            self.mfa = raw_data.get("mfa", False)
+            self.isRole = raw_data.get("roleaccount", False)
+            self.metadata = raw_data.get("metadata", {})  # This can contain whatever specific metadata the app needs
+
         # Update the external dict representation with internal values
         self.update(self.__dict__.items())
 
