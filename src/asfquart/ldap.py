@@ -4,6 +4,13 @@ from . import base
 import re
 import time
 
+# The ASF LDAP server, used to check a user's credentials and to look up their project memberships
+# (see LDAPClient). The connection is opened for each check, even when the memberships of the user
+# are cached, because the credentials are verified with a bind on every call. If the server is
+# unreachable, or returns an unexpected error, LDAPClient.get_affiliations() raises an
+# ASFQuartException with errorcode 500 ("Could not perform LDAP authorization check, please try
+# again later."), and users that rely on LDAP cannot be authorized until it is back. Wrong
+# credentials give errorcode 403 instead.
 DEFAULT_LDAP_URI = "ldaps://ldap-eu.apache.org:636"
 DEFAULT_LDAP_BASE = "uid=%s,ou=people,dc=apache,dc=org"
 DEFAULT_LDAP_GROUP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
