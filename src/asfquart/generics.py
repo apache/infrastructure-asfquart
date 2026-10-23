@@ -15,6 +15,16 @@ import asfquart  # implies .session
 
 
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
+#
+# OAUTH_URL_INIT is where the user's browser is sent to log in. Only the browser contacts it, the
+#   application never does. If oauth.apache.org is unreachable, the redirect is still issued and
+#   the user sees a browser error instead of the login page.
+# OAUTH_URL_CALLBACK is fetched by the application, with the one-time code from the redirect back,
+#   to exchange it for the user's session data. The request has a 15 second read timeout. A
+#   response other than 200 is answered with a 403 "OAuth authentication failed." A connection
+#   error or timeout is not caught in the callback handler, so it surfaces as an unhandled
+#   exception (a 500 response unless the application registers an error handler), and the user
+#   is not logged in. Logging in with OAuth is not possible while oauth.apache.org is down.
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"
