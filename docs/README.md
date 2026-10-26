@@ -32,3 +32,5 @@ async def some_endpoint():
 - [Session handling](sessions.md)
 - [Authentication, Authorization, and Access](auth.md)
 - [Simplified EZT templating](templates.md)
+- [Input validation rules](input-validation.md)
+- [Limits and timeouts](limits.md)
