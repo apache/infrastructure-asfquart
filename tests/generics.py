@@ -91,6 +91,17 @@ async def test_login_rejects_data_uri():
 
 
 @pytest.mark.generics
+@pytest.mark.parametrize("login", ["/foo%0d%0aSet-Cookie:x=y", "/foo%00", "/foo%0a", "/%5Cevil.com"])
+async def test_login_rejects_control_characters(login):
+    """?login= values with control characters or backslashes must return 400."""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        resp = await client.get(f"/auth?login={login}")
+        assert resp.status_code == 400
+
+
+@pytest.mark.generics
 async def test_logout_rejects_javascript_uri():
     """?logout=javascript:... must return 400."""
     app = _make_app()
