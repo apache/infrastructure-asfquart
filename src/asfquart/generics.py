@@ -132,7 +132,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                         content_type="text/plain; charset=utf-8"
                     )
                 redirect_uri = state_data[1]
-                ct = aiohttp.client.ClientTimeout(sock_read=15)
+                ct = aiohttp.client.ClientTimeout(total=30, connect=10, sock_read=15)
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
                     rv = await session.get(OAUTH_URL_CALLBACK % code)
                     if rv.status != 200:
