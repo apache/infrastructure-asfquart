@@ -64,7 +64,11 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
-            if login_uri and ((not login_uri.startswith("/")) or login_uri.startswith("//")):
+            if login_uri and (
+                (not login_uri.startswith("/"))
+                or login_uri.startswith("//")
+                or any(ord(c) < 0x20 or ord(c) == 0x7F or c == "\\" for c in login_uri)
+            ):
                 return quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
