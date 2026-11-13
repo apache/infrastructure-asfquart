@@ -3,6 +3,9 @@
 
 import hashlib
 import hmac
+import jwt
+from jwt import PyJWKClient
+from pyjwt_key_fetcher import AsyncKeyFetcher
 import secrets
 import urllib
 import urllib.parse
@@ -17,6 +20,16 @@ import asfquart  # implies .session
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+
+# Enforce that the callback to the relying party will be https
+OAUTH_ENFORCE_HTTPS = True
+
+# Options for full OAuth2 validation
+OAUTH_CLIENT_ID = None
+OAUTH_CLIENT_SECRET = None
+OAUTH_URL_LOGOUT = None
+OAUTH_ISSUER = None
+
 DEFAULT_OAUTH_URI = "/auth"
 
 # The pending login is tied to the browser that started it, via this cookie.
@@ -32,6 +45,12 @@ STATE_COOKIE_SECURE = True
 def _browser_digest(browser):
     return hashlib.sha256(browser.encode("utf-8")).hexdigest()
 
+fetcher = None
+def _fetcher():
+    global fetcher
+    if not fetcher:
+        fetcher = AsyncKeyFetcher(valid_issuers=[OAUTH_ISSUER])
+    return fetcher
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
@@ -72,15 +91,30 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 )
             state = secrets.token_hex(16)
             browser = quart.request.cookies.get(STATE_COOKIE_NAME) or secrets.token_hex(16)
-            # Save the time we initialized this state, the optional login redirect URI,
-            # and a digest of the browser cookie that is allowed to complete this login
-            pending_states[state] = [time.time(), login_uri, _browser_digest(browser)]
-            callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
-            callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
-                callback_host,
-                f"{uri}?state={state}",
-            )
+
+            callback_host = quart.request.host_url
+            if OAUTH_ENFORCE_HTTPS:
+                callback_host = callback_host.replace("http://", "https://")
+
+            if OAUTH_CLIENT_ID:
+                callback_url = urllib.parse.urljoin(
+                    callback_host,
+                    f"{uri}",
+                )
+            else:
+                callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
+                    callback_host,
+                    f"{uri}?state={state}",
+                )
+
+            # Save the time we initialized this state,
+            # the optional login redirect URI,
+            # and a digest of the browser cookie that is allowed to complete this login,
+            # and the optional callback url
+            pending_states[state] = [time.time(), login_uri, _browser_digest(browser), callback_url]
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
+            if OAUTH_CLIENT_ID:
+                redirect_url = redirect_url + "&response_type=code&scope=openid%20profile%20email&client_id=" + OAUTH_CLIENT_ID
             response = quart.redirect(redirect_url)
             response.set_cookie(
                 STATE_COOKIE_NAME,
@@ -96,7 +130,11 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
             await asfquart.session.aclear()
-            if logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
+            if OAUTH_URL_LOGOUT:
+                # authentik doesn't support a post_logout_redirect_uri
+                # or similar yet AFAICT
+                response = quart.redirect(OAUTH_URL_LOGOUT)
+            elif logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
                 response = quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
@@ -131,32 +169,67 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                         response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
                         content_type="text/plain; charset=utf-8"
                     )
-                redirect_uri = state_data[1]
+                post_login_redirect_uri = state_data[1]
+                original_redirect_uri = state_data[3]
                 ct = aiohttp.client.ClientTimeout(sock_read=15)
                 async with aiohttp.client.ClientSession(timeout=ct) as session:
-                    rv = await session.get(OAUTH_URL_CALLBACK % code)
+                    if OAUTH_CLIENT_SECRET:
+                        auth = aiohttp.BasicAuth(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET)
+                        data = {
+                            'grant_type': "authorization_code",
+                            'redirect_uri': original_redirect_uri,
+                            'code': code
+                        }
+                        rv = await session.post(OAUTH_URL_CALLBACK, auth=auth, data=data)
+                    else:
+                        rv = await session.get(OAUTH_URL_CALLBACK % code)
                     if rv.status != 200:
+                        # TODO there is likely useful diagnostic
+                        # information in the response body, where
+                        # do we log that?
                         return quart.Response(
                             status=403,
                             response="OAuth authentication failed.\n",
                             content_type="text/plain; charset=utf-8"
                         )
-                    oauth_data = await rv.json()
+
+                    if OAUTH_CLIENT_SECRET:
+                        token = await rv.json()
+                        id_token = token["id_token"]
+                        # this is slightly silly since in our case the oauth server
+                        # and the issuer are the same machine, so trusting the
+                        # issuer to tell us how to validate the signature from the
+                        # oauth server is almost a no-op.
+                        # Erring on the side of caution and refactor-safety, though:
+                        key_entry = await _fetcher().get_key(id_token)
+
+                        # Perhaps we'd like to validate
+                        # `key_entry.algorithms` is not too wide here?
+                        oauth_data = jwt.decode(
+                            id_token,
+                            audience=OAUTH_CLIENT_ID,
+                            **key_entry,
+                        )
+                    else:
+                        oauth_data = await rv.json()
+
                     await asfquart.session.awrite(oauth_data)
-                if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
+
+                name = oauth_data['nickname'] if OAUTH_CLIENT_SECRET else oauth_data['uid']
+                if post_login_redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go
                     # someplace else. This counts as a samesite request.
                     return quart.Response(
                         status=200,
-                        response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
-                        headers={"Refresh": f"0; url={redirect_uri}"},
+                        response=f"Successfully logged in! Welcome, {name}\n",
+                        headers={"Refresh": f"0; url={post_login_redirect_uri}"},
                         content_type="text/plain; charset=utf-8"
                     )
                 # Otherwise, just say hi
                 return quart.Response(
                     status=200,
-                    response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
+                    response=f"Successfully logged in! Welcome, {name}\n",
                     content_type="text/plain; charset=utf-8"
                 )
             else:  # Just spit out existing session if it's there
