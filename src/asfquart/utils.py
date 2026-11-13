@@ -9,6 +9,7 @@ import logging
 
 import quart
 import werkzeug.routing
+import werkzeug.sansio.response
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +78,9 @@ class FilenameConverter(werkzeug.routing.BaseConverter):
 # The data dictionary will be provided to the EZT template for
 # rendering the page.
 #
+# A handler may instead return a Response (a redirect, say); it is
+# passed through untouched rather than handed to the template.
+#
 def use_template(template):
 
     # The @use_template(T_MAIN) example is actually a function call
@@ -91,6 +95,10 @@ def use_template(template):
         async def wrapper(*args, **kw):
             # Get the data dictionary from the page endpoint.
             data = await func(*args, **kw)
+
+            # A Response is already a page; there is nothing to render.
+            if isinstance(data, werkzeug.sansio.response.Response):
+                return data
 
             # Render that page, and return it to Quart.
             return render(template, data)
