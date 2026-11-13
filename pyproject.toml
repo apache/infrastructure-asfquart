@@ -34,9 +34,9 @@ aioldap = ["bonsai"]
 
 [dependency-groups]
 test = [
-    "pytest==7.2.0",
+    "pytest>=9.0,<10",
     "pytest-cov>=4.0.0,<5",
-    "pytest-asyncio>=0.20.3,<1",
+    "pytest-asyncio>=1.3,<2",
     "pytest-mock>=3.10.0,<4",
 ]
 
