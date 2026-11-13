@@ -39,13 +39,10 @@ def _string_to_re(s):
     """convert arbitrary string to fullmatch regex"""
     return re.escape(s) + '$'
 
-def _string_to_re(s):
-    """convert arbitrary string to fullmatch regex"""
-    return re.escape(s) + '$'
 
-def _string_to_re(s):
-    """convert arbitrary string to fullmatch regex"""
-    return re.escape(s) + '$'
+def plain_function(_session):
+    """A requirement that belongs to no class at all"""
+    return True, ""
 
 @pytest.mark.auth
 async def test_auth_basics():
@@ -74,6 +71,11 @@ async def test_auth_basics():
     with pytest.raises(TypeError):
         @asfquart.auth.require(any_of={R.member, print})
         async def requires_bad_thingy():
+            pass
+    # A plain function has no owning class at all; still a TypeError, not an AttributeError
+    with pytest.raises(TypeError):
+        @asfquart.auth.require(plain_function)
+        async def requires_plain_function():
             pass
 
 

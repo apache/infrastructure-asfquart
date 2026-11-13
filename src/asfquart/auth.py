@@ -74,9 +74,10 @@ def requirements_to_iter(args: typing.Any):
     # Single arg? Convert to list first
     if not isinstance(args, collections.abc.Iterable):
         args = [args]
-    # Test that each requirement is an allowed one (belongs to the Requirements class)
+    # Test that each requirement is an allowed one (a classmethod of Requirements or a subclass)
     for req in args:
-        if not callable(req) or not issubclass(req.__self__, Requirements):
+        owner = getattr(req, "__self__", None)
+        if not callable(req) or not isinstance(owner, type) or not issubclass(owner, Requirements):
             raise TypeError(
                 f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class."
             )
