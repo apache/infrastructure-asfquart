@@ -76,7 +76,7 @@ def requirements_to_iter(args: typing.Any):
         args = [args]
     # Test that each requirement is an allowed one (belongs to the Requirements class)
     for req in args:
-        if not callable(req) or req != getattr(Requirements, req.__name__, None):
+        if not callable(req) or not issubclass(req.__self__, Requirements):
             raise TypeError(
                 f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class."
             )
