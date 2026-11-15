@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
+import asyncio
 import hashlib
 import hmac
+import logging
+import re
 import secrets
 import urllib
 import urllib.parse
@@ -28,9 +31,43 @@ STATE_COOKIE_NAME = "asfquart-oauth-state"
 STATE_COOKIE_SAMESITE = "Lax"
 STATE_COOKIE_SECURE = True
 
+# Time limits for the code exchange with the OAuth provider. The exchange holds a
+# request open, so every phase is bounded: 10 seconds to connect, 15 seconds
+# between reads, and 30 seconds for the exchange as a whole.
+OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=15)
+
+# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider.
+OAUTH_UID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+
+LOGGER = logging.getLogger(__name__)
+
 
 def _browser_digest(browser):
     return hashlib.sha256(browser.encode("utf-8")).hexdigest()
+
+
+def _is_local_redirect(uri: str) -> bool:
+    """Tests whether a login/logout redirect target is a path on this site, and safe to place
+    in a Location or Refresh header."""
+    # Must be a path, and not a protocol-relative URL (//example.org)
+    if (not uri.startswith("/")) or uri.startswith("//"):
+        return False
+    # Browsers treat a backslash as a forward slash, so /\example.org is //example.org
+    if "\\" in uri:
+        return False
+    # No control characters: CR and LF would split a header, and browsers drop tabs and
+    # newlines from a URL before parsing it, so /<tab>/example.org is //example.org too
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in uri):
+        return False
+    return True
+
+
+def _is_valid_oauth_data(oauth_data) -> bool:
+    """Tests whether the OAuth provider's response identifies a user."""
+    if not isinstance(oauth_data, dict):
+        return False
+    uid = oauth_data.get("uid")
+    return isinstance(uid, str) and OAUTH_UID_RE.fullmatch(uid) is not None
 
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
@@ -64,7 +101,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
-            if login_uri and ((not login_uri.startswith("/")) or login_uri.startswith("//")):
+            if login_uri and not _is_local_redirect(login_uri):
                 return quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
@@ -96,7 +133,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
             await asfquart.session.aclear()
-            if logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
+            if logout_uri and not _is_local_redirect(logout_uri):
                 response = quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
@@ -132,17 +169,24 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                         content_type="text/plain; charset=utf-8"
                     )
                 redirect_uri = state_data[1]
-                ct = aiohttp.client.ClientTimeout(sock_read=15)
-                async with aiohttp.client.ClientSession(timeout=ct) as session:
-                    rv = await session.get(OAUTH_URL_CALLBACK % code)
-                    if rv.status != 200:
-                        return quart.Response(
-                            status=403,
-                            response="OAuth authentication failed.\n",
-                            content_type="text/plain; charset=utf-8"
-                        )
-                    oauth_data = await rv.json()
-                    await asfquart.session.awrite(oauth_data)
+                oauth_data = None
+                try:
+                    async with aiohttp.client.ClientSession(timeout=OAUTH_TIMEOUT) as session:
+                        # The code comes from the query string, so it is quoted before it goes into ours
+                        rv = await session.get(OAUTH_URL_CALLBACK % urllib.parse.quote(code, safe=""))
+                        if rv.status == 200:
+                            oauth_data = await rv.json()
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+                    # Only the kind of error is logged: the message may carry the URL, and with it the code
+                    LOGGER.warning("OAuth code exchange failed: %s", type(e).__name__)
+                # Nothing is stored unless the response identifies a user
+                if not _is_valid_oauth_data(oauth_data):
+                    return quart.Response(
+                        status=403,
+                        response="OAuth authentication failed.\n",
+                        content_type="text/plain; charset=utf-8"
+                    )
+                await asfquart.session.awrite(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go

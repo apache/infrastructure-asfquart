@@ -30,8 +30,13 @@ the login. The rules are implemented in `setup_oauth()` in `src/asfquart/generic
 
 On `/auth?login` or `/auth?login=/foo`, asfquart:
 
-1. Rejects the redirect target with `400 Invalid redirect URI.` unless it is a local path,
-   i.e. it starts with `/` and does not start with `//`.
+1. Rejects the redirect target with `400 Invalid redirect URI.` unless it is a local path:
+   - it starts with `/` and does not start with `//`,
+   - it contains no backslash, because browsers read `/\example.org` as `//example.org`,
+   - it contains no control characters (CR, LF, tab, NUL and so on), because the target is
+     later sent in a `Refresh` header, and because browsers drop tabs and newlines from a URL.
+
+   The same rule applies to the target of `/auth?logout=/foo`.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
 3. Records, in `pending_states[state]`:
    - the time the login started,
@@ -70,10 +75,19 @@ which check failed:
 403 Invalid or expired OAuth state provided. OAuth workflows must be completed within 900 seconds.
 ```
 
-Once the rules pass, the `code` is exchanged with the OAuth provider. If that exchange fails,
-the response is `403 OAuth authentication failed.` Otherwise the session is created and the
-browser is redirected to the recorded target (using a `Refresh` header rather than a 30x
-response, so that `SameSite` session cookies are kept).
+Once the rules pass, the `code` is exchanged with the OAuth provider. The `code` is
+percent-encoded before it is placed in the request to the provider. The exchange is time
+limited (`asfquart.generics.OAUTH_TIMEOUT`): 10 seconds to connect, 15 seconds between reads,
+and 30 seconds in total.
+
+The session is only created if the provider answers `200` with a JSON object whose `uid` is a
+string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,
+digits, `-` and `_`, at most 64 characters, not starting with `-` or `_`). In every other case
+(the provider cannot be reached, is too slow, refuses the code, or sends something else) nothing
+is stored and the response is `403 OAuth authentication failed.`
+
+After a successful exchange the browser is redirected to the recorded target (using a `Refresh`
+header rather than a 30x response, so that `SameSite` session cookies are kept).
 
 ### Configuration
 
