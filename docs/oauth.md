@@ -82,7 +82,7 @@ and 30 seconds in total.
 
 The session is only created if the provider answers `200` with a JSON object whose `uid` is a
 string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,
-digits, `-` and `_`, at most 64 characters, not starting with `-` or `_`). In every other case
+digits, `-` and `_`, starting with a letter, at least three characters). In every other case
 (the provider cannot be reached, is too slow, refuses the code, or sends something else) nothing
 is stored and the response is `403 OAuth authentication failed.`
 

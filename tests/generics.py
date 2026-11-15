@@ -358,7 +358,12 @@ async def test_callback_provider_refuses(monkeypatch):
     {"uid": "testuser\n"},
     {"uid": "testuser,ou=people"},
     {"uid": "-testuser"},
-    {"uid": "t" * 65},
+    {"uid": "_testuser"},
+    {"uid": "4user"},             # must start with a letter
+    {"uid": "ab"},                # at least three characters
+    {"uid": "TestUser"},
+    {"uid": "test.user"},
+    {"uid": "t\u00e9stuser"},
     ValueError("not JSON"),       # body is not JSON
 ])
 async def test_callback_rejects_response_without_valid_uid(monkeypatch, data):
@@ -373,7 +378,7 @@ async def test_callback_rejects_response_without_valid_uid(monkeypatch, data):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("uid", ["testuser", "a", "test-user", "test_user", "user42", "4user"])
+@pytest.mark.parametrize("uid", ["testuser", "abc", "test-user", "test_user", "user42", "t-_", "t" * 100])
 async def test_callback_accepts_asf_uids(monkeypatch, uid):
     app = _make_app()
     provider = _FakeProvider(data={"uid": uid})

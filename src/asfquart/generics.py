@@ -36,8 +36,10 @@ STATE_COOKIE_SECURE = True
 # between reads, and 30 seconds for the exchange as a whole.
 OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=15)
 
-# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider.
-OAUTH_UID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider: lower case
+# letters, digits, hyphens and underscores, starting with a letter, and at least three characters.
+# This is the same rule as AsfUid in atr/models/safe.py of apache/tooling-trusted-releases.
+OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
 
 LOGGER = logging.getLogger(__name__)
 
