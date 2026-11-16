@@ -16,13 +16,26 @@ LOGGER = logging.getLogger(__name__)
 
 # The largest form, in bytes, that formdata() will read, unless the app sets MAX_FORM_CONTENT_LENGTH.
 DEFAULT_MAX_FORM_CONTENT_LENGTH = 102400
-DEFAULT_MAX_CONTENT_LENGTH = DEFAULT_MAX_FORM_CONTENT_LENGTH  # the former name of this default
 
+# The content types that quart parses as a form. These are compared with the request's mimetype,
+# which is lower case and has no parameters, as quart does when it picks a parser.
 FORM_CONTENT_TYPES = (
     "multipart/form-data",
     "application/x-www-form-urlencoded",
     "application/x-url-encoded",
 )
+
+
+def _size_setting(name: str, default=None):
+    """A size limit from the app's config, in bytes, or None if there is none. The value may be a
+    string, as it is when the config was read from the environment."""
+    value = quart.current_app.config.get(name, default)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"The {name} setting must be a number of bytes, or None; it is {value!r}") from None
 
 
 def _max_form_content_length():
@@ -31,53 +44,68 @@ def _max_form_content_length():
     Forms have a limit of their own, the MAX_FORM_CONTENT_LENGTH setting, so that it can be small
     without also limiting other request bodies such as uploads. Quart's MAX_CONTENT_LENGTH applies
     to every request body, forms included, so the lower of the two is the limit for a form."""
-    config = quart.current_app.config
     limits = (
-        config.get("MAX_FORM_CONTENT_LENGTH", DEFAULT_MAX_FORM_CONTENT_LENGTH),
-        config.get("MAX_CONTENT_LENGTH"),
+        _size_setting("MAX_FORM_CONTENT_LENGTH", DEFAULT_MAX_FORM_CONTENT_LENGTH),
+        _size_setting("MAX_CONTENT_LENGTH"),
     )
     limits = [limit for limit in limits if limit is not None]
     return min(limits) if limits else None
 
 
-def _form_too_large(size: int, max_size: int) -> quart.Response:
-    return quart.Response(
-        status=413,
-        response=f"Request content length ({size} bytes) is larger than what is permitted for form data ({max_size} bytes)!",
-        content_type="text/plain; charset=utf-8"
+def _form_too_large(max_size: int) -> werkzeug.exceptions.RequestEntityTooLarge:
+    return werkzeug.exceptions.RequestEntityTooLarge(
+        f"The form data in this request is larger than the {max_size} bytes that are permitted."
     )
+
+
+async def _receive_form_body(max_size: int):
+    """Receives the body of a form that does not declare its length (chunked transfer encoding),
+    and gives up as soon as it has grown past max_size, without receiving the rest."""
+    request = quart.request
+    chunks = []
+
+    async def receive():
+        size = 0
+        async for chunk in request.body:
+            size += len(chunk)
+            if size > max_size:
+                raise _form_too_large(max_size)
+            chunks.append(chunk)
+
+    # Iterating over the body has no time limit of its own, so the one that quart uses when it
+    # reads a body is applied here, for a client that stops sending.
+    try:
+        await asyncio.wait_for(receive(), timeout=request.body_timeout)
+    except asyncio.TimeoutError:
+        raise werkzeug.exceptions.RequestTimeout() from None
+    # Iterating has used the body up. Put what was received back, as a complete body, so that
+    # quart can parse the form from it, and request.files and request.get_data() work as usual.
+    data = b"".join(chunks)
+    body = request.body_class(len(data), None)
+    body.append(data)
+    body.set_complete()
+    request.body = body
 
 
 async def formdata():
     """Catch-all form data converter. Converts form data of any form (json, urlencoded, mime, etc) to a dict.
 
-    A form (as opposed to JSON) that is larger than the MAX_FORM_CONTENT_LENGTH setting is not read:
-    the return value is then a 413 response, which the caller should return as it is."""
+    A form (as opposed to JSON) that is larger than the MAX_FORM_CONTENT_LENGTH setting is not read.
+    werkzeug's RequestEntityTooLarge is raised instead, as quart does for a body over MAX_CONTENT_LENGTH,
+    and unless the caller catches it the response is a 413."""
     form_data = dict()
     form_data.update(quart.request.args.to_dict())  # query string args
-    # Pre-parse check for form data size. This must come before the form is parsed.
-    content_type = quart.request.content_type
+    # Check the size of a form before it is parsed.
     max_size = _max_form_content_length()
-    if max_size is not None and content_type and any(x in content_type for x in FORM_CONTENT_TYPES):
+    if max_size is not None and quart.request.mimetype in FORM_CONTENT_TYPES:
         content_length = quart.request.content_length
         if content_length is not None:
+            # The request declares its length, so it can be refused without reading any of its body.
+            # The body is not drained first: that would wait on the client for all of it.
             if content_length > max_size:
-                # If the content is too large for us to handle, we need to silently ignore every chunk, so we can
-                # return with a cleared buffer, lest bad things happen. Quart stops us reading a body that is over
-                # its own limit.
-                try:
-                    async for _data in quart.request.body:
-                        pass
-                except werkzeug.exceptions.RequestEntityTooLarge:
-                    pass
-                return _form_too_large(content_length, max_size)
+                raise _form_too_large(max_size)
         else:
-            # The request does not declare its length (chunked transfer encoding), so the body has to be
-            # received before it can be measured. Quart stops receiving at MAX_CONTENT_LENGTH, and raises
-            # RequestEntityTooLarge, which becomes a 413. The body is kept, so the form can still be parsed.
-            body_length = len(await quart.request.get_data())
-            if body_length > max_size:
-                return _form_too_large(body_length, max_size)
+            await _receive_form_body(max_size)
     xform = await quart.request.form                # POST form data
     if xform:
         form_data.update(xform.to_dict())

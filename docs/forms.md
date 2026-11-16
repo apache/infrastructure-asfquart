@@ -7,15 +7,12 @@ query string arguments, the fields of a form (`application/x-www-form-urlencoded
 ```python
 import asfquart
 import asfquart.utils
-import quart
 
 APP = asfquart.APP
 
 @APP.route("/submit", methods=["POST"])
 async def submit():
     data = await asfquart.utils.formdata()
-    if isinstance(data, quart.Response):
-        return data  # the form was too large, see below
     return {"received": sorted(data)}
 ```
 
@@ -39,14 +36,23 @@ app.config["MAX_FORM_CONTENT_LENGTH"] = 1024 * 1024  # allow forms of up to 1 MB
 Set `MAX_FORM_CONTENT_LENGTH` to `None` to have no limit for forms other than
 `MAX_CONTENT_LENGTH`.
 
-When a form is larger than the limit, `formdata()` does not parse it. It returns a `413`
-response in place of the dictionary, which the endpoint should return as it is.
+The setting is a number of bytes. A string that holds a number, as a value read from the
+environment is, is accepted too.
 
-- If the request has a `Content-Length` header, the form is refused on that header, before
-  its body is read.
-- If it has none (chunked transfer encoding), the body has to be received before it can be
-  measured. quart stops receiving at `MAX_CONTENT_LENGTH`, so that setting is what bounds
-  the memory used by such a request.
+When a form is larger than the limit, `formdata()` does not parse it. It raises werkzeug's
+`RequestEntityTooLarge`, the exception that quart raises for a body over `MAX_CONTENT_LENGTH`.
+An endpoint does not need to do anything about it: left alone, it becomes a `413` response.
+
+- If the request has a `Content-Length` header, the form is refused on that header, without
+  any of its body being read.
+- If it has none (chunked transfer encoding), the body is counted as it arrives, and the form
+  is refused as soon as it passes the limit, without the rest being received. A client that
+  stops sending is given up on after quart's `BODY_TIMEOUT` (60 seconds by default), with a
+  `408`.
+
+A request is a form if its content type is one that quart parses as a form:
+`application/x-www-form-urlencoded`, `multipart/form-data` or `application/x-url-encoded`,
+in any letter case.
 
 The limit counts the whole body of the request. For a `multipart/form-data` request that
 includes any files sent with the form.
