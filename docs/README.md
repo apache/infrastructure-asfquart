@@ -32,3 +32,4 @@ async def some_endpoint():
 - [Session handling](sessions.md)
 - [Authentication, Authorization, and Access](auth.md)
 - [Simplified EZT templating](templates.md)
+- [Form data and its size limit](forms.md)
