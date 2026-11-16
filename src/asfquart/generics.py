@@ -22,6 +22,10 @@ import asfquart  # implies .session
 
 
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
+# - OAUTH_URL_INIT: where the browser is sent to log in. asfquart does not connect to it itself.
+# - OAUTH_URL_CALLBACK: where asfquart exchanges the code from the callback for the user's details,
+#   once per login. If it cannot be reached or refuses the code, that login fails and no session is made.
+# Sessions that already exist do not depend on either. See docs/external-services.md.
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"

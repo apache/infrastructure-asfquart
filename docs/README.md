@@ -29,6 +29,7 @@ async def some_endpoint():
 ## See also (WIP):
 
 - [Setting up OAuth](oauth.md)
+- [External services, and what happens when they fail](external-services.md)
 - [Session handling](sessions.md)
 - [Authentication, Authorization, and Access](auth.md)
 - [Simplified EZT templating](templates.md)
