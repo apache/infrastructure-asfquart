@@ -95,6 +95,53 @@ response, so that `SameSite` session cookies are kept).
   navigation from the provider and browsers do not send `Strict` cookies on it. Deployments
   where the provider and the app share a site may set it to `"Strict"`.
 
+## Logging logins
+
+asfquart does not log authentication decisions. Which decisions to record, in what format,
+and where the record goes are for the application to decide, so asfquart leaves this to the
+application. An application that needs an audit trail of logins can add one with an
+`after_request` hook:
+
+```python
+import logging
+
+import asfquart
+import quart
+
+app = asfquart.construct("myapp")
+log = logging.getLogger("myapp.audit")
+
+@app.after_request
+async def log_logins(response):
+    request = quart.request
+    # Only the callback from the OAuth provider is a login decision
+    if request.path == "/auth" and "code" in request.args and "state" in request.args:
+        if response.status_code == 200:
+            session = await asfquart.session.read()
+            log.info("login succeeded: uid=%s remote=%s", session.uid, request.remote_addr)
+        else:
+            log.warning("login failed: status=%s remote=%s", response.status_code, request.remote_addr)
+    return response
+```
+
+How this works:
+
+- A request to the OAuth endpoint that carries both `code` and `state` is the callback from
+  the OAuth provider. Every other request to the endpoint (starting a login, logging out,
+  showing the current session) is not a login decision.
+- The callback answers `200` when the login succeeded, and by then the session has been
+  created, so the hook can read the user id from it. It answers `403` when the login was
+  refused: the state was unknown, expired, already used or from another browser, or the OAuth
+  provider did not accept the code. See the callback consistency rules above.
+- Do not log the `code` or the `state`, and so do not log the query string of the callback.
+  The `code` is a credential until it has been exchanged.
+- Behind a reverse proxy, `request.remote_addr` is the address of the proxy. Use the header
+  that your proxy sets (`X-Forwarded-For`, say) if you want the address of the client.
+- If the OAuth endpoint is not at `/auth`, compare with the path that was given to
+  `asfquart.construct(..., oauth=...)` or `setup_oauth()`.
+
+The hook above is kept working by `tests/oauth_logging.py`.
+
 ## Multi-instance limitation
 
 OAuth state parameters are stored in a process-local dictionary in `src/asfquart/generics.py`:
