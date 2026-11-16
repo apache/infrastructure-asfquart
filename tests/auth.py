@@ -156,6 +156,9 @@ async def test_role_auth():
 @pytest.mark.auth
 async def test_extended_auth():
     """Extended auth tests"""
+    app = asfquart.construct("foobar", token_file=None)
+    # These requirements need a session, as every requirement does
+    quart.session = {app.app_id: {"uts": time.time(), "uid": "bar"}}
 
     @asfquart.auth.require(MyR.true)
     async def test_true():
