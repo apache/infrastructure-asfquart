@@ -119,10 +119,11 @@ header rather than a 30x response, so that `SameSite` session cookies are kept).
 
 ## Logging logins
 
-asfquart does not log authentication decisions. Which decisions to record, in what format,
-and where the record goes are for the application to decide, so asfquart leaves this to the
-application. An application that needs an audit trail of logins can add one with an
-`after_request` hook:
+asfquart does not keep an audit trail of logins. It logs a warning when the exchange with
+the OAuth provider fails, so that the failure can be diagnosed (see above), but it does not
+log successful logins, or who logged in from where. Which decisions to record, in what
+format, and where the record goes are for the application to decide. An application that
+needs an audit trail of logins can add one with an `after_request` hook:
 
 ```python
 import logging
@@ -136,10 +137,21 @@ log = logging.getLogger("myapp.audit")
 @app.after_request
 async def log_logins(response):
     request = quart.request
-    # Only the callback from the OAuth provider is a login decision
-    if request.path == "/auth" and "code" in request.args and "state" in request.args:
-        if response.status_code == 200:
-            session = await asfquart.session.read()
+    args = request.args
+    # Only the callback from the OAuth provider is a login decision. The OAuth endpoint treats a
+    # request as the callback when it has a code and a state, neither of them empty, and is not
+    # a login or logout request. Anything else must not be logged as a login: with an empty code,
+    # for instance, the endpoint shows the session of a user who is logged in already.
+    is_callback = (
+        request.path == "/auth"
+        and args.get("code") and args.get("state")
+        and not args.get("login") and not args.get("logout")
+    )
+    if is_callback:
+        # The callback answers 200 only when it has created the session. Read it back all the
+        # same, and count the login as failed if it is not there.
+        session = await asfquart.session.read() if response.status_code == 200 else None
+        if session is not None:
             log.info("login succeeded: uid=%s remote=%s", session.uid, request.remote_addr)
         else:
             log.warning("login failed: status=%s remote=%s", response.status_code, request.remote_addr)
@@ -148,21 +160,32 @@ async def log_logins(response):
 
 How this works:
 
-- A request to the OAuth endpoint that carries both `code` and `state` is the callback from
-  the OAuth provider. Every other request to the endpoint (starting a login, logging out,
-  showing the current session) is not a login decision.
+- The callback from the OAuth provider is a request to the OAuth endpoint with a `code` and
+  a `state`, neither of them empty, and without `login` or `logout`. Every other request to
+  the endpoint (starting a login, logging out, showing the current session) is not a login
+  decision. The test for the callback has to be this exact: anybody can send any query string,
+  and `/auth?code=&state=` from a user who is logged in already answers `200` with their
+  session, which a looser test would record as a login that never happened.
 - The callback answers `200` when the login succeeded, and by then the session has been
-  created, so the hook can read the user id from it. It answers `403` when the login was
+  created, so the hook can read the user id from it. The hook still allows for the session
+  not being there, and then records a failed login, so that it cannot raise an error of its
+  own on a response that was otherwise fine. The callback answers `403` when the login was
   refused: the state was unknown, expired, already used or from another browser, or the OAuth
   provider did not accept the code. See the callback consistency rules above.
 - Do not log the `code` or the `state`, and so do not log the query string of the callback.
   The `code` is a credential until it has been exchanged.
 - Behind a reverse proxy, `request.remote_addr` is the address of the proxy. Use the header
-  that your proxy sets (`X-Forwarded-For`, say) if you want the address of the client.
+  that your proxy sets (`X-Forwarded-For`, say) if you want the address of the client, but
+  only if the proxy overwrites that header and the application cannot be reached except
+  through the proxy. Otherwise the header is whatever the client chose to send, and an audit
+  trail built on it can be forged. See the security notes in
+  [MDN's page on `X-Forwarded-For`](https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For).
 - If the OAuth endpoint is not at `/auth`, compare with the path that was given to
   `asfquart.construct(..., oauth=...)` or `setup_oauth()`.
 
-The hook above is kept working by `tests/oauth_logging.py`.
+The hook has to follow the rules of the OAuth endpoint, so `tests/oauth_logging.py` runs it
+against the endpoint, including the requests that must not be logged. If the endpoint changes,
+those tests say that this section has to change with it.
 
 ## Multi-instance limitation
 
