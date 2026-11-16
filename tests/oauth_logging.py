@@ -256,16 +256,16 @@ async def test_hook_does_not_fail_when_the_session_cannot_be_read(monkeypatch, c
 log = logging.getLogger("myapp.audit")
 
 
-# ---- This is the store from docs/oauth.md ("Logging logins") ----
 class Store:
-    """Sessions kept in memory, to show where the logging goes. A real store keeps them in a database."""
+    """A small store, kept in memory, with the two log lines from docs/oauth.md ("Logging logins")
+    in its create() and destroy(). It has no replace() or register(): see the stores below."""
 
     def __init__(self):
         self._sessions = {}
 
     async def create(self, hsid, session_data):
         self._sessions[hsid] = asfquart.session.ClientSession(session_data)
-        log.info("login succeeded: uid=%s remote=%s", session_data["uid"], quart.request.remote_addr)
+        log.info("login succeeded: uid=%s remote=%s", session_data.get("uid"), quart.request.remote_addr)
 
     async def validate(self, hsid):
         return self._sessions.get(hsid)
@@ -274,13 +274,35 @@ class Store:
         session = self._sessions.pop(hsid, None)
         if session is not None:
             log.info("logout: uid=%s", session.uid)
-# ---- End of the store ----
 
 
-def _make_store_app():
-    """An app with the store from docs/oauth.md, and no hook"""
+class StoreWithRegister(Store):
+    """A store that areplace() can use, by destroying the old session and registering the new one"""
+
+    async def register(self, hsid, session_object):
+        self._sessions[hsid] = session_object
+
+
+class StoreWithReplace(Store):
+    """A store that areplace() can use in one step"""
+
+    async def replace(self, old_hsid, new_hsid, session_object):
+        self._sessions.pop(old_hsid, None)
+        self._sessions[new_hsid] = session_object
+
+
+def _make_store_app(store_class=Store):
+    """An app with a store that logs as docs/oauth.md shows, and no hook"""
     app = asfquart.construct(f"test_oauth_logging_store_{next(_counter)}", token_file=None)
-    app.sessions = Store()
+    app.sessions = store_class()
+
+    @app.route("/change")
+    async def change():
+        session = await asfquart.session.read()
+        changed = asfquart.session.ClientSession({"uid": session.uid, "fullname": "Changed"})
+        await asfquart.session.areplace(changed)
+        return "ok"
+
     return app
 
 
@@ -357,3 +379,59 @@ async def test_store_logs_logout_when_a_user_logs_in_again(monkeypatch, caplog):
     messages = [record.getMessage().split(" remote=")[0] for record in _audit(caplog)]
     assert messages == ["login succeeded: uid=testuser", "logout: uid=testuser", "login succeeded: uid=testuser"]
     assert len(app.sessions._sessions) == 1
+
+
+@pytest.mark.generics
+async def test_store_login_without_a_uid_does_not_leave_a_session_behind(caplog):
+    """The log line cannot fail, so create() cannot raise after it has saved the session. If it
+    did, the session would be in the store with no cookie leading to it."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app()
+    async with app.test_request_context("/"):
+        await asfquart.session.awrite({"fullname": "No uid"})
+        assert isinstance(quart.session[app.app_id].get("sid"), str)   # the cookie leads to the session
+    assert len(app.sessions._sessions) == 1
+    (record,) = _audit(caplog)
+    assert "login succeeded: uid=None" in record.getMessage()
+
+
+@pytest.mark.generics
+async def test_areplace_with_replace_logs_nothing(monkeypatch, caplog):
+    """With a store that has replace(), changing a session with areplace() is neither a login nor a logout."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app(StoreWithReplace)
+    async with app.test_app():
+        client = app.test_client()
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        caplog.clear()
+        assert (await client.get("/change", scheme="https")).status_code == 200
+        session = await client.get("/auth", scheme="https")
+        assert (await session.get_json())["fullname"] == "Changed"
+    assert _audit(caplog) == []
+    assert len(app.sessions._sessions) == 1
+
+
+@pytest.mark.generics
+async def test_areplace_with_register_logs_a_logout(monkeypatch, caplog):
+    """With a store that has only register(), areplace() destroys the old session first, and the
+    log line in destroy() records a logout, as docs/oauth.md warns."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app(StoreWithRegister)
+    async with app.test_app():
+        client = app.test_client()
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        caplog.clear()
+        assert (await client.get("/change", scheme="https")).status_code == 200
+        session = await client.get("/auth", scheme="https")
+        assert (await session.get_json())["fullname"] == "Changed"
+    assert [record.getMessage() for record in _audit(caplog)] == ["logout: uid=testuser"]
+
+
+@pytest.mark.generics
+async def test_areplace_needs_replace_or_register(monkeypatch):
+    """A store with neither cannot be used with areplace()."""
+    app = _make_store_app(Store)
+    async with app.test_app():
+        client = app.test_client()
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        assert (await client.get("/change", scheme="https")).status_code == 500

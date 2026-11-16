@@ -139,51 +139,46 @@ application has one, and the hook for what the store does not see.
 
 An application that keeps its sessions in a store of its own (`app.sessions`) is told about
 each login: asfquart calls the store's `create()` when the OAuth callback has succeeded, and
-not before. It calls `destroy()` when the user logs out. This is where to log them:
+not before. It calls `destroy()` when the user logs out. Those two methods, in the store that
+the application already has, are where to log:
 
 ```python
-import logging
-
-import asfquart
-import asfquart.session
-import quart
-
 log = logging.getLogger("myapp.audit")
 
 class Store:
-    """Sessions kept in memory, to show where the logging goes. A real store keeps them in a database."""
-
-    def __init__(self):
-        self._sessions = {}
-
     async def create(self, hsid, session_data):
-        self._sessions[hsid] = asfquart.session.ClientSession(session_data)
-        log.info("login succeeded: uid=%s remote=%s", session_data["uid"], quart.request.remote_addr)
-
-    async def validate(self, hsid):
-        return self._sessions.get(hsid)
+        ...  # save the session, as the store does now
+        log.info("login succeeded: uid=%s remote=%s", session_data.get("uid"), quart.request.remote_addr)
 
     async def destroy(self, hsid):
-        session = self._sessions.pop(hsid, None)
+        session = ...  # find the session and delete it, as the store does now
         if session is not None:
             log.info("logout: uid=%s", session.uid)
-
-app = asfquart.construct("myapp")
-app.sessions = Store()
 ```
+
+This shows where the two log lines go, and nothing more. It is not a store to copy: the rest
+of a store (`validate()`, and `replace()` or `register()` if the application uses
+`asfquart.session.areplace()`) is left out, and is the application's own.
 
 What to know about it:
 
 - Nothing in the request decides whether `create()` is called, so a record of a login cannot
   be made up by sending the application a request. That is the advantage over the hook below.
+- Log after the session has been saved, and log nothing that can fail. asfquart puts the
+  session in the cookie only once `create()` has returned, so an error raised after saving
+  leaves a session in the store that no cookie leads to. That is why the line above reads the
+  user id with `session_data.get("uid")`, and not with `session_data["uid"]`.
 - `create()` is called by `asfquart.session.awrite()`. The OAuth callback calls that after a
   successful login, and so does the application whenever its own code calls `awrite()`. If
   the application changes a session that way, the old session is destroyed and a new one
-  created, which the store above would record as a logout and a login. To change a session
-  without that, use `asfquart.session.areplace()`, which calls the store's `replace()` (or
-  `register()`) and leaves `create()` for logins.
-- `destroy()` is called on logout, and also for the previous session of a user who logs in
-  again without logging out first. The store above then records a logout followed by a login.
+  created, which this logging would record as a logout and a login.
+- `asfquart.session.areplace()` changes a session without calling `create()`. What it does
+  call depends on the store. If the store has a `replace()` method, that is all it calls, and
+  nothing is logged. If it has not, it calls `destroy()` for the old session and then
+  `register()` for the new one, and this logging would record a logout that did not happen.
+  A store with neither method cannot be used with `areplace()` at all.
+- `destroy()` is also called for the previous session of a user who logs in again without
+  logging out first. This logging then records a logout followed by a login.
 - Do not log the `hsid`. It is a hash of the session id, but it is still what finds the
   session.
 - `quart.request.remote_addr` is the address of the reverse proxy when there is one. The
@@ -261,7 +256,8 @@ How this works:
 
 The hook has to follow the rules of the OAuth endpoint, so `tests/oauth_logging.py` runs it
 against the endpoint, including the requests that must not be logged. If the endpoint changes,
-those tests say that this section has to change with it. The same file runs the store above.
+those tests say that this section has to change with it. The same file has a small store
+with the two log lines above in it, and checks what they record.
 
 ## Multi-instance limitation
 
