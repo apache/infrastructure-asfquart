@@ -7,9 +7,12 @@ import secrets
 import time
 import binascii
 import inspect
+import logging
 
 import quart
 import asfquart
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _generate_sid() -> str:
@@ -102,7 +105,8 @@ async def read(expiry_time=86400*7, app=None):
                     if session_dict:
                         return ClientSession(session_dict)
                 else:
-                    print(f"Debug: No PAT handler registered to handle token {quart.request.authorization.token}")
+                    # The token is a credential, and must not end up in the log
+                    LOGGER.warning("Bearer token presented, but no token handler is registered")
             case "basic":  # Basic LDAP auth - will need to grab info from LDAP
                 if not app.basic_auth:
                     raise base.ASFQuartException("Basic authentication is not enabled", errorcode=401)

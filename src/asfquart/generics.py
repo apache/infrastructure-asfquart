@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
+import asyncio
+import functools
 import hashlib
 import hmac
+import logging
+import re
 import secrets
+import ssl
+import unicodedata
 import urllib
 import urllib.parse
 import time
+import typing
 
 import quart
 import aiohttp
@@ -15,6 +22,10 @@ import asfquart  # implies .session
 
 
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
+# - OAUTH_URL_INIT: where the browser is sent to log in. asfquart does not connect to it itself.
+# - OAUTH_URL_CALLBACK: where asfquart exchanges the code from the callback for the user's details,
+#   once per login. If it cannot be reached or refuses the code, that login fails and no session is made.
+# Sessions that already exist do not depend on either. See docs/external-services.md.
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"
@@ -28,9 +39,70 @@ STATE_COOKIE_NAME = "asfquart-oauth-state"
 STATE_COOKIE_SAMESITE = "Lax"
 STATE_COOKIE_SECURE = True
 
+# Time limits for the code exchange with the OAuth provider. The exchange holds a
+# request open, so every phase is bounded: 10 seconds to connect, 15 seconds
+# between reads, and 30 seconds for the exchange as a whole.
+OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=15)
+
+# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider: lower case
+# letters, digits, hyphens and underscores, starting with a letter, and at least two characters.
+# This is the rule of AsfUid in atr/models/safe.py of apache/tooling-trusted-releases, except that
+# AsfUid asks for three characters, and there are ASF users whose id has two.
+OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
+
+LOGGER = logging.getLogger(__name__)
+
 
 def _browser_digest(browser):
     return hashlib.sha256(browser.encode("utf-8")).hexdigest()
+
+
+def _is_local_redirect(uri: str) -> bool:
+    """Tests whether a login/logout redirect target is a path on this site, and safe to place
+    in a Location or Refresh header."""
+    # Must be a path, and not a protocol-relative URL (//example.org)
+    if (not uri.startswith("/")) or uri.startswith("//"):
+        return False
+    # Browsers treat a backslash as a forward slash, so /\example.org is //example.org
+    if "\\" in uri:
+        return False
+    # No control characters: CR and LF would split a header, and browsers drop tabs and
+    # newlines from a URL before parsing it, so /<tab>/example.org is //example.org too.
+    # This is every character in a Unicode "C" category (control, format, surrogate, private
+    # use, unassigned), as in ATR's _assert_standard_safe_syntax, and the line and paragraph
+    # separators, which are not in a "C" category but do end a line.
+    if any(unicodedata.category(char)[0] == "C" or char in "\u2028\u2029" for char in uri):
+        return False
+    return True
+
+
+@functools.lru_cache(maxsize=None)
+def _oauth_ssl_context() -> ssl.SSLContext:
+    """The TLS settings for the code exchange with the OAuth provider: the provider's certificate
+    must be valid, it must be for the provider's host name, and the connection must use TLS 1.2
+    or later."""
+    # These are the values that ssl.create_default_context() gives in current versions of Python.
+    # They are set here as well, so that they are stated, and do not depend on those defaults.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+def _oauth_data_problem(oauth_data) -> typing.Optional[str]:
+    """Tests whether the OAuth provider's response identifies a user. Returns None if it does,
+    and otherwise what is wrong with it, for the log. The response itself is not in the result."""
+    if not isinstance(oauth_data, dict):
+        return "response is not a JSON object"
+    if "uid" not in oauth_data:
+        return "response has no uid"
+    uid = oauth_data["uid"]
+    if not isinstance(uid, str):
+        return "uid is not a string"
+    if not OAUTH_UID_RE.fullmatch(uid):
+        return "uid is not in the form of an ASF user id"
+    return None
 
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
@@ -64,7 +136,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
-            if login_uri and ((not login_uri.startswith("/")) or login_uri.startswith("//")):
+            if login_uri and not _is_local_redirect(login_uri):
                 return quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
@@ -96,7 +168,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
             await asfquart.session.aclear()
-            if logout_uri and ((not logout_uri.startswith("/")) or logout_uri.startswith("//")):
+            if logout_uri and not _is_local_redirect(logout_uri):
                 response = quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",
@@ -132,17 +204,32 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                         content_type="text/plain; charset=utf-8"
                     )
                 redirect_uri = state_data[1]
-                ct = aiohttp.client.ClientTimeout(sock_read=15)
-                async with aiohttp.client.ClientSession(timeout=ct) as session:
-                    rv = await session.get(OAUTH_URL_CALLBACK % code)
-                    if rv.status != 200:
-                        return quart.Response(
-                            status=403,
-                            response="OAuth authentication failed.\n",
-                            content_type="text/plain; charset=utf-8"
-                        )
-                    oauth_data = await rv.json()
-                    await asfquart.session.awrite(oauth_data)
+                oauth_data = None
+                try:
+                    connector = aiohttp.TCPConnector(ssl=_oauth_ssl_context())
+                    async with aiohttp.client.ClientSession(timeout=OAUTH_TIMEOUT, connector=connector) as session:
+                        # The code comes from the query string, so it is quoted before it goes into ours
+                        rv = await session.get(OAUTH_URL_CALLBACK % urllib.parse.quote(code, safe=""))
+                        if rv.status == 200:
+                            oauth_data = await rv.json()
+                            problem = _oauth_data_problem(oauth_data)
+                        else:
+                            problem = f"provider answered with status {rv.status}"
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as e:
+                    # OSError covers what aiohttp does not wrap, such as a CA store that cannot be loaded.
+                    # Only the kind of error is logged: the message may carry the URL, and with it the code
+                    problem = type(e).__name__
+                # Nothing is stored unless the response identifies a user. The log says what went wrong,
+                # so that a provider that is down, one that has changed its response, and a uid that was
+                # turned away can be told apart. It does not have the code, the state or the response.
+                if problem is not None:
+                    LOGGER.warning("OAuth code exchange failed: %s", problem)
+                    return quart.Response(
+                        status=403,
+                        response="OAuth authentication failed.\n",
+                        content_type="text/plain; charset=utf-8"
+                    )
+                await asfquart.session.awrite(oauth_data)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go
