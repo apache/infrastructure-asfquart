@@ -1,4 +1,5 @@
 Changes in 0.1.14:
+ - Python 3.14 is tested and listed as supported.
  - The `login` and `logout` redirect targets may not contain a backslash or control characters:
    browsers read `/\example.org` as `//example.org`, and the login target is sent in a `Refresh`
    header (#90, #124).
