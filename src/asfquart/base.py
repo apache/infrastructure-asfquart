@@ -26,6 +26,7 @@ import secrets
 import os
 import stat
 import logging
+import re
 import signal
 
 import asfpy.twatcher
@@ -55,6 +56,18 @@ SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this us
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
 CONFIG_FNAME = 'config.yaml'
 TOKEN_FNAME = 'apptoken.txt'
+
+# The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
+# letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
+# apache/tooling-trusted-releases, except that AsfUid asks for three characters, and there are ASF
+# users whose id has two.
+#
+# This is the one place where the rule is written. It is used under two more names, for the two
+# places a user id comes into asfquart from outside: generics.OAUTH_UID_RE (the OAuth provider's
+# response) and ldap.VALID_UID_RE (the username of HTTP Basic authentication). Change the rule
+# here and it changes for both. An app that needs another rule for one of the two can assign a
+# pattern of its own to that name.
+ASF_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
 
 class ASFQuartException(Exception):
