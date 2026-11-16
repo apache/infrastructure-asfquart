@@ -1,3 +1,6 @@
+Changes in 0.1.14:
+ - Python 3.14 is tested and listed as supported.
+
 Changes in 0.1.13:
  - `auth.require` accepts the classmethods of a `Requirements` subclass, so an app can add its own
    requirements next to the built-in ones (#41).
