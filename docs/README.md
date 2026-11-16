@@ -41,3 +41,4 @@ this, what goes wrong otherwise, and what would have to change to support more.
 - [The application secret, and its token file](app-secret.md)
 - [Authentication, Authorization, and Access](auth.md)
 - [Simplified EZT templating](templates.md)
+- [Form data and its size limit](forms.md)
