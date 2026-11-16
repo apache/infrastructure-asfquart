@@ -26,6 +26,13 @@ async def some_endpoint():
     return do_something()
 ```
 
+## One process
+
+An asfquart application runs as one process: one instance, served by one worker. Do not give
+the ASGI server more than one worker, and do not run several instances of an application
+behind a load balancer. [One process](one-process.md) explains which parts of asfquart assume
+this, what goes wrong otherwise, and what would have to change to support more.
+
 ## See also (WIP):
 
 - [Setting up OAuth](oauth.md)
