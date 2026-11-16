@@ -7,6 +7,8 @@ Changes in 0.1.14:
  - The exchange with the OAuth provider has a connect timeout (10s) and a total timeout (30s) next to
    the read timeout (`generics.OAUTH_TIMEOUT`). A provider that cannot be reached or is too slow is a
    403 rather than a 500 (#130).
+ - The rule for the form of an ASF user id is written in one place, `base.ASF_UID_RE`.
+   `generics.OAUTH_UID_RE` and `ldap.VALID_UID_RE` are that same pattern, and are unchanged.
  - A session is only created when the OAuth provider's response is a JSON object with a `uid` in the
    form of an ASF user id (`generics.OAUTH_UID_RE`); anything else is a 403 (#132).
  - A bearer token presented when no `token_handler` is registered is no longer printed to stdout; a
