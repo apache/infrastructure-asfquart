@@ -9,6 +9,11 @@ DEFAULT_LDAP_BASE = "uid=%s,ou=people,dc=apache,dc=org"
 DEFAULT_LDAP_GROUP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
 UID_RE = re.compile(r"^(?:uid=)?([^,]+)")
 GROUP_RE = re.compile(r"^(?:cn=)?([^,]+)")
+# The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
+# letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
+# apache/tooling-trusted-releases, except that AsfUid asks for three characters, and there are ASF
+# users whose id has two. None of these characters has a special meaning in a DN.
+VALID_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 DEFAULT_MEMBER_ATTR = "member"
 DEFAULT_OWNER_ATTR = "owner"
 DEFAULT_LDAP_CACHE_TTL = 3600  # Cache LDAP lookups for one hour
@@ -27,6 +32,15 @@ LDAP_CACHE: dict[str, list] = {}  # Temporary one-hour cache to speed up lookups
 
 class LDAPClient:
     def __init__(self, username: str, password: str):
+        # The username goes into a DN, so it must be a plain user id, and nothing that could alter
+        # the DN (a comma, an equals sign and so on). The error is the one given for a wrong
+        # password, and no connection to LDAP is made.
+        if not isinstance(username, str) or not VALID_UID_RE.fullmatch(username):
+            raise base.ASFQuartException("Invalid credentials provided", errorcode=403)
+        # An empty password must never reach LDAP: a bind with a DN and no password is an
+        # "unauthenticated bind", which a server may accept without checking anything.
+        if not isinstance(password, str) or not password:
+            raise base.ASFQuartException("Invalid credentials provided", errorcode=403)
         self.userid = username
         self.dn = DEFAULT_LDAP_BASE % username
         self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)
