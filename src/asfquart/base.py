@@ -151,10 +151,13 @@ class QuartApp(quart.Quart):
                     LOGGER.warning(f"Secrets file {_token_filename} is empty; generating a new secret")
                     self.secret_key = secrets.token_hex()
                     try:
+                        # Set the mode first, so that the secret is never in a file that others can
+                        # read. If the mode cannot be set, the secret is not written to the file.
+                        os.chmod(_token_filename, SECRETS_FILE_MODE)
                         with open(_token_filename, "w", encoding='utf-8') as sfile:
                             sfile.write(self.secret_key)
-                        os.chmod(_token_filename, SECRETS_FILE_MODE)
-                    except PermissionError:
+                    except OSError:
+                        # Not only a lack of permission: a read-only file system or a full disk too
                         LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
             else:  # No token file yet, try to write, warn if we cannot
                 self.secret_key = secrets.token_hex()
@@ -171,7 +174,8 @@ class QuartApp(quart.Quart):
                         os.umask(umask_original)  # reset umask to the original setting
                     with open(fd, "w", encoding='utf-8') as sfile:
                         sfile.write(self.secret_key)
-                except PermissionError:
+                except OSError:
+                    # Not only a lack of permission: a read-only file system or a full disk too
                     LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
     def runx(self, /,

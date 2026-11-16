@@ -1,6 +1,16 @@
+import errno
+import os
 import os.path
+import re
+import stat
+
+import pytest
+import quart
+import quart.globals
 
 import asfquart
+import asfquart.base
+import asfquart.session
 
 
 def test_no_token_file(tmp_path):
@@ -29,17 +39,6 @@ def test_absolute_token_file(tmp_path):
 
 
 # ---- An empty token file is treated as missing ----
-
-import logging
-import os
-import re
-import stat
-
-import pytest
-import quart
-import quart.globals
-
-import asfquart.session
 
 
 @pytest.fixture
@@ -92,6 +91,75 @@ def test_empty_token_file_that_cannot_be_written(tmp_path, caplog):
     assert re.fullmatch(r"[0-9a-f]{64}", app.secret_key)
     assert token_file.read_text() == ""
     assert "Session permanence cannot be guaranteed" in caplog.text
+
+
+def test_mode_is_set_before_the_secret_is_written(tmp_path, monkeypatch):
+    """A file that others could read is closed to them first, and only then given the secret."""
+    token_file = tmp_path / "apptoken.txt"
+    token_file.write_text("")
+    os.chmod(token_file, 0o644)
+    seen = []
+    real_chmod = os.chmod
+
+    def chmod(path, mode, *args, **kwargs):
+        seen.append((oct(mode), token_file.read_text()))     # what is in the file when its mode is set
+        return real_chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(asfquart.base.os, "chmod", chmod)
+    app = asfquart.construct("foobar", app_dir=str(tmp_path))
+    assert seen == [("0o600", "")]
+    assert token_file.read_text() == app.secret_key
+    assert _mode(token_file) == 0o600
+
+
+def test_secret_is_not_written_if_the_mode_cannot_be_set(tmp_path, monkeypatch, caplog):
+    """If the file cannot be closed to others, the secret stays out of it."""
+    token_file = tmp_path / "apptoken.txt"
+    token_file.write_text("")
+    os.chmod(token_file, 0o644)
+
+    def chmod(path, mode, *args, **kwargs):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(asfquart.base.os, "chmod", chmod)
+    app = asfquart.construct("foobar", app_dir=str(tmp_path))
+    assert re.fullmatch(r"[0-9a-f]{64}", app.secret_key)
+    assert token_file.read_text() == ""
+    assert "Session permanence cannot be guaranteed" in caplog.text
+
+
+@pytest.mark.parametrize("error", [errno.EROFS, errno.ENOSPC, errno.EACCES])
+@pytest.mark.parametrize("existing", [None, ""])
+def test_app_starts_when_the_token_file_cannot_be_written(tmp_path, monkeypatch, caplog, error, existing):
+    """A read-only file system or a full disk does not stop the app from starting, any more than a
+    lack of permission does. That goes for a missing token file and for an empty one."""
+    token_file = tmp_path / "apptoken.txt"
+    if existing is not None:
+        token_file.write_text(existing)
+        os.chmod(token_file, 0o600)
+    real_open, real_os_open = open, os.open
+
+    def refuse(path, *args, **kwargs):
+        writing = any(isinstance(arg, str) and "w" in arg for arg in args) or kwargs.get("mode") == "w"
+        if str(path) == str(token_file) and writing:
+            raise OSError(error, os.strerror(error))
+        return real_open(path, *args, **kwargs)
+
+    def refuse_os_open(path, flags, *args, **kwargs):
+        if str(path) == str(token_file) and flags & os.O_WRONLY:
+            raise OSError(error, os.strerror(error))
+        return real_os_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", refuse)
+    monkeypatch.setattr(asfquart.base.os, "open", refuse_os_open)
+    app = asfquart.construct("foobar", app_dir=str(tmp_path))
+    assert re.fullmatch(r"[0-9a-f]{64}", app.secret_key)
+    assert "Session permanence cannot be guaranteed" in caplog.text
+    assert app.secret_key not in caplog.text
+    if existing is None:
+        assert not token_file.exists()
+    else:
+        assert token_file.read_text() == ""
 
 
 def test_token_file_with_a_secret_is_left_alone(tmp_path, caplog):
