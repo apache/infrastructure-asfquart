@@ -16,11 +16,13 @@ argument of `asfquart.construct()`, or the directory the application was started
 - If it is not, a new secret is generated (`secrets.token_hex()`, 256 random bits) and written
   to the file. The file is created with mode `0600`, so that only the user the application
   runs as can read it.
-- If the file is there but empty, it is treated as missing: a new secret is generated and
-  written to it, and a warning is logged. (A file can be left empty if the application is
+- If the file is there but empty, or has only whitespace in it, it is treated as missing: a
+  new secret is generated and written to it, and a warning is logged. The file's mode is set
+  to `0600` before the secret goes in. (A file can be left empty if the application is
   stopped just as it creates it.)
-- If the file cannot be written, the application still starts, with a secret that it only
-  holds in memory, and logs `Session permanence cannot be guaranteed!`. See "Without a token
+- If the file cannot be written, for want of permission or because the file system is
+  read-only or full, the application still starts, with a secret that it only holds in
+  memory, and logs `Session permanence cannot be guaranteed!`. See "Without a token
   file" below for what that means.
 - If the file has any other mode than `0600`, a warning is written to standard error, and the
   file is used all the same. Fix the mode: anybody who can read the file can forge a session.
@@ -44,9 +46,12 @@ the application itself.
 With a token file, restarting the application changes nothing: the same secret is read back,
 and the cookies that users already have are still accepted.
 
-Several instances of one application that are to accept each other's sessions need the same
-secret, and so the same token file. (Logins in progress are another matter: see
-[Multi-instance limitation](oauth.md#multi-instance-limitation).)
+An asfquart application runs as one process: one instance, with one worker. Sharing a token
+file does not make it safe to run several. Logins in progress are kept in the memory of the
+process that started them (see [Multi-instance limitation](oauth.md#multi-instance-limitation)),
+and the token file is not created or replaced in a way that is safe for two processes that
+start at the same moment: each can end up with a secret of its own, and refuse the other's
+session cookies. See [issue 160](https://github.com/apache/infrastructure-asfquart/issues/160).
 
 ## Without a token file
 
