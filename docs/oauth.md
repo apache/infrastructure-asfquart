@@ -122,8 +122,79 @@ header rather than a 30x response, so that `SameSite` session cookies are kept).
 asfquart does not keep an audit trail of logins. It logs a warning when the exchange with
 the OAuth provider fails, so that the failure can be diagnosed (see above), but it does not
 log successful logins, or who logged in from where. Which decisions to record, in what
-format, and where the record goes are for the application to decide. An application that
-needs an audit trail of logins can add one with an `after_request` hook:
+format, and where the record goes are for the application to decide.
+
+There are two places where an application can record them. Use the session store if the
+application has one, and the hook for what the store does not see.
+
+| | Session store | `after_request` hook |
+|---|---|---|
+| Needs | Server-side sessions (`app.sessions`) | Nothing |
+| Successful logins | Yes | Yes |
+| Logouts | Yes | No |
+| Failed logins | No: they never reach the store | Yes |
+| How it knows | asfquart calls it once the login has succeeded | It works it out from the request and the response |
+
+### In the session store
+
+An application that keeps its sessions in a store of its own (`app.sessions`) is told about
+each login: asfquart calls the store's `create()` when the OAuth callback has succeeded, and
+not before. It calls `destroy()` when the user logs out. This is where to log them:
+
+```python
+import logging
+
+import asfquart
+import asfquart.session
+import quart
+
+log = logging.getLogger("myapp.audit")
+
+class Store:
+    """Sessions kept in memory, to show where the logging goes. A real store keeps them in a database."""
+
+    def __init__(self):
+        self._sessions = {}
+
+    async def create(self, hsid, session_data):
+        self._sessions[hsid] = asfquart.session.ClientSession(session_data)
+        log.info("login succeeded: uid=%s remote=%s", session_data["uid"], quart.request.remote_addr)
+
+    async def validate(self, hsid):
+        return self._sessions.get(hsid)
+
+    async def destroy(self, hsid):
+        session = self._sessions.pop(hsid, None)
+        if session is not None:
+            log.info("logout: uid=%s", session.uid)
+
+app = asfquart.construct("myapp")
+app.sessions = Store()
+```
+
+What to know about it:
+
+- Nothing in the request decides whether `create()` is called, so a record of a login cannot
+  be made up by sending the application a request. That is the advantage over the hook below.
+- `create()` is called by `asfquart.session.awrite()`. The OAuth callback calls that after a
+  successful login, and so does the application whenever its own code calls `awrite()`. If
+  the application changes a session that way, the old session is destroyed and a new one
+  created, which the store above would record as a logout and a login. To change a session
+  without that, use `asfquart.session.areplace()`, which calls the store's `replace()` (or
+  `register()`) and leaves `create()` for logins.
+- `destroy()` is called on logout, and also for the previous session of a user who logs in
+  again without logging out first. The store above then records a logout followed by a login.
+- Do not log the `hsid`. It is a hash of the session id, but it is still what finds the
+  session.
+- A login that fails never gets as far as the store. To record those, add the hook below.
+
+### In an `after_request` hook
+
+An application without a session store, where the session is kept in the cookie, has no
+`create()` to log in. It can record logins with an `after_request` hook, which also sees the
+logins that fail. An application that logs successful logins in its store, and adds this hook
+for the failed ones, should leave the `log.info` line out of the hook, or each successful
+login is recorded twice.
 
 ```python
 import logging
@@ -185,7 +256,7 @@ How this works:
 
 The hook has to follow the rules of the OAuth endpoint, so `tests/oauth_logging.py` runs it
 against the endpoint, including the requests that must not be logged. If the endpoint changes,
-those tests say that this section has to change with it.
+those tests say that this section has to change with it. The same file runs the store above.
 
 ## Multi-instance limitation
 

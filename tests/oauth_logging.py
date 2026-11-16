@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the login logging hook shown in docs/oauth.md.
+"""Tests for the login logging shown in docs/oauth.md: the session store, and the hook.
 
 asfquart does not log authentication decisions itself; that is left to the application.
 These tests keep the documented hook working: if the OAuth endpoint changes in a way that
@@ -249,3 +249,111 @@ async def test_hook_does_not_fail_when_the_session_cannot_be_read(monkeypatch, c
     (record,) = _audit(caplog)
     assert record.levelno == logging.WARNING
     assert "login failed: status=200" in record.getMessage()
+
+
+# ---- Logging in the session store ----
+
+log = logging.getLogger("myapp.audit")
+
+
+# ---- This is the store from docs/oauth.md ("Logging logins") ----
+class Store:
+    """Sessions kept in memory, to show where the logging goes. A real store keeps them in a database."""
+
+    def __init__(self):
+        self._sessions = {}
+
+    async def create(self, hsid, session_data):
+        self._sessions[hsid] = asfquart.session.ClientSession(session_data)
+        log.info("login succeeded: uid=%s remote=%s", session_data["uid"], quart.request.remote_addr)
+
+    async def validate(self, hsid):
+        return self._sessions.get(hsid)
+
+    async def destroy(self, hsid):
+        session = self._sessions.pop(hsid, None)
+        if session is not None:
+            log.info("logout: uid=%s", session.uid)
+# ---- End of the store ----
+
+
+def _make_store_app():
+    """An app with the store from docs/oauth.md, and no hook"""
+    app = asfquart.construct(f"test_oauth_logging_store_{next(_counter)}", token_file=None)
+    app.sessions = Store()
+    return app
+
+
+async def _login(client, uid_provider, monkeypatch, code="sekrit"):
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", uid_provider)
+    state = await _start_login(client)
+    return state, await client.get(f"/auth?state={state}&code={code}", scheme="https")
+
+
+@pytest.mark.generics
+async def test_store_logs_login_and_logout(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app()
+    async with app.test_app():
+        client = app.test_client()
+        state, resp = await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        assert resp.status_code == 200
+        (login,) = _audit(caplog)
+        assert "login succeeded: uid=testuser" in login.getMessage()
+
+        # The session works, and reading it logs nothing more
+        session = await client.get("/auth", scheme="https")
+        assert (await session.get_json())["uid"] == "testuser"
+        assert len(_audit(caplog)) == 1
+
+        assert (await client.get("/auth?logout", scheme="https")).status_code == 200
+        assert [record.getMessage() for record in _audit(caplog)][1:] == ["logout: uid=testuser"]
+
+        # Logging out again, with no session left, is not another logout
+        await client.get("/auth?logout", scheme="https")
+        assert len(_audit(caplog)) == 2
+
+    # Neither the code nor the state is in the log
+    for secret in ("sekrit", state):
+        assert secret not in caplog.text
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("query", ["code=&state=", "code=x&state=", "code&state", "", "code=made-up&state=made-up"])
+async def test_store_cannot_be_made_to_log_a_login(monkeypatch, caplog, query):
+    """No request from a logged in user produces a login record: only a completed login does."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app()
+    async with app.test_app():
+        client = app.test_client()
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        caplog.clear()
+        await client.get(f"/auth?{query}", scheme="https")
+    assert _audit(caplog) == []
+
+
+@pytest.mark.generics
+async def test_store_does_not_see_failed_logins(monkeypatch, caplog):
+    """A refused code and an unknown state never reach the store, which is why the hook exists."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app()
+    async with app.test_app():
+        client = app.test_client()
+        _state, resp = await _login(client, _FakeProvider(status=401), monkeypatch)
+        assert resp.status_code == 403
+        assert (await client.get("/auth?state=made-up&code=sekrit", scheme="https")).status_code == 403
+    assert _audit(caplog) == []
+
+
+@pytest.mark.generics
+async def test_store_logs_logout_when_a_user_logs_in_again(monkeypatch, caplog):
+    """Logging in again without logging out destroys the previous session first."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_store_app()
+    async with app.test_app():
+        client = app.test_client()
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+        await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
+    messages = [record.getMessage().split(" remote=")[0] for record in _audit(caplog)]
+    assert messages == ["login succeeded: uid=testuser", "logout: uid=testuser", "login succeeded: uid=testuser"]
+    assert len(app.sessions._sessions) == 1
