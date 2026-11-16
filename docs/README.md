@@ -32,4 +32,5 @@ async def some_endpoint():
 - [External services, and what happens when they fail](external-services.md)
 - [Session handling](sessions.md)
 - [Authentication, Authorization, and Access](auth.md)
+- [Session stores: keeping sessions on the server](session-stores.md)
 - [Simplified EZT templating](templates.md)
