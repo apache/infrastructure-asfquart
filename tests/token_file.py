@@ -81,16 +81,18 @@ def test_empty_token_file_with_loose_permissions_is_tightened(tmp_path):
     assert _mode(token_file) == 0o600
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write to a read-only file")
-def test_empty_token_file_that_cannot_be_written(tmp_path, caplog):
-    """If the new secret cannot be saved, the app still gets one, and the log says that it will not last."""
+def test_read_only_empty_token_file_is_given_a_secret(tmp_path, caplog):
+    """An empty token file that the app owns is given the mode it should have, 0600, and then the
+    secret, whatever its mode was: a read-only file is not left empty. (What happens when the mode
+    cannot be set, or the file cannot be written, is tested further down.)"""
     token_file = tmp_path / "apptoken.txt"
     token_file.write_text("")
     os.chmod(token_file, 0o400)
     app = asfquart.construct("foobar", app_dir=str(tmp_path))
     assert re.fullmatch(r"[0-9a-f]{64}", app.secret_key)
-    assert token_file.read_text() == ""
-    assert "Session permanence cannot be guaranteed" in caplog.text
+    assert token_file.read_text() == app.secret_key
+    assert _mode(token_file) == 0o600
+    assert "Session permanence cannot be guaranteed" not in caplog.text
 
 
 def test_mode_is_set_before_the_secret_is_written(tmp_path, monkeypatch):
