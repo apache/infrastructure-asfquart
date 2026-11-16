@@ -12,7 +12,7 @@ import asfquart.ldap
 
 INVALID_USERNAMES = [
     "",
-    "ab",                                   # too short
+    "a",                                    # too short
     "4user",                                # must start with a letter
     "-user",
     "_user",
@@ -33,7 +33,7 @@ INVALID_USERNAMES = [
     "ｔｅｓｔ",             # full width letters
 ]
 
-VALID_USERNAMES = ["testuser", "abc", "test-user", "test_user", "user42", "t" * 100]
+VALID_USERNAMES = ["testuser", "abc", "ab", "a1", "test-user", "test_user", "user42", "t" * 100]
 
 
 @pytest.fixture
@@ -71,6 +71,26 @@ def test_username_must_be_a_string(ldap_clients, username):
 
 
 @pytest.mark.auth
+@pytest.mark.parametrize("password", ["", None, b"password", 12345])
+def test_empty_password_is_rejected(ldap_clients, password):
+    """An empty password is refused before LDAP is contacted: a bind without a password is an
+    unauthenticated bind, which a server may accept."""
+    with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+        asfquart.ldap.LDAPClient("testuser", password)
+    assert excinfo.value.errorcode == 403
+    assert excinfo.value.message == "Invalid credentials provided"
+    assert ldap_clients == []
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("password", [" ", "0", "p", "pass word", "p\u00e4ss"])
+def test_non_empty_password_is_passed_on(ldap_clients, password):
+    """Any password that is not empty goes to LDAP as it is, for LDAP to judge"""
+    asfquart.ldap.LDAPClient("testuser", password)
+    assert [created[2] for created in ldap_clients] == [password]
+
+
+@pytest.mark.auth
 @pytest.mark.parametrize("username", VALID_USERNAMES)
 def test_valid_username_is_accepted(ldap_clients, username):
     client = asfquart.ldap.LDAPClient(username, "password")
@@ -80,12 +100,26 @@ def test_valid_username_is_accepted(ldap_clients, username):
 
 
 @pytest.mark.auth
-@pytest.mark.parametrize("username", ["testuser,ou=project", "uid=testuser", "test*", "ab"])
+@pytest.mark.parametrize("username", ["testuser,ou=project", "uid=testuser", "test*", "a"])
 async def test_basic_auth_with_invalid_username(monkeypatch, ldap_clients, username):
     """Through the Authorization header: a 403, as for a wrong password, and no LDAP connection"""
     monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
     app = asfquart.construct("ldap_username", token_file=None)
     credentials = base64.b64encode(f"{username}:password".encode()).decode()
+    async with app.test_request_context("/", headers={"Authorization": f"Basic {credentials}"}):
+        with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+            await asfquart.session.read()
+    assert excinfo.value.errorcode == 403
+    assert excinfo.value.message == "Invalid credentials provided"
+    assert ldap_clients == []
+
+
+@pytest.mark.auth
+async def test_basic_auth_with_empty_password(monkeypatch, ldap_clients):
+    """Through the Authorization header: "testuser:" is a 403, and no LDAP connection"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
+    app = asfquart.construct("ldap_empty_password", token_file=None)
+    credentials = base64.b64encode(b"testuser:").decode()
     async with app.test_request_context("/", headers={"Authorization": f"Basic {credentials}"}):
         with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
             await asfquart.session.read()
