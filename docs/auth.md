@@ -35,7 +35,15 @@ async def func():
 
 # You can also use both, such as requiring (req1 AND req2) AND (either req3 OR req4)
 @asfquart.auth.require(all_of={req1, req2}, any_of={req3,req4})
+
+# Requirements given as the first argument are all_of requirements. They are added to any
+# given with all_of: this requires req1 AND req2 AND (either req3 OR req4)
+@asfquart.auth.require(req1, all_of=req2, any_of={req3, req4})
 ```
+
+Requirements are checked when the endpoint is defined. Anything that is not a method of
+`asfquart.auth.Requirements` (or of a subclass of it) raises a `TypeError`, as does using a
+bare `@asfquart.auth.require` on a function that is not `async`.
 
 The example below shows how to cordon off specific end-points to certain groups of users:
 
