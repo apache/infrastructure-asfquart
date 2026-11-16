@@ -50,6 +50,10 @@ OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, soc
 # AsfUid asks for three characters, and there are ASF users whose id has two.
 OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
+# How many logins may be pending (started, and not yet completed or expired) at one time. Each
+# takes a few hundred bytes. When there are more, the oldest are dropped, and fail if completed.
+DEFAULT_MAX_PENDING_LOGINS = 10000
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -105,11 +109,31 @@ def _oauth_data_problem(oauth_data) -> typing.Optional[str]:
     return None
 
 
-def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
+def _purge_pending_states(pending_states: dict, workflow_timeout: int, max_size: int) -> int:
+    """Removes the pending logins that have expired, and then the oldest of the rest for as long as
+    there are more than max_size. Returns how many were removed that had not expired.
+
+    The dictionary keeps its entries in the order they were added, which is the order of their
+    timestamps, so the oldest are at the front and nothing past the first one to keep is looked at."""
+    deadline = time.time() - workflow_timeout
+    evicted = 0
+    while pending_states:
+        oldest = next(iter(pending_states))
+        expired = pending_states[oldest][0] < deadline
+        if not expired and len(pending_states) <= max_size:
+            break
+        del pending_states[oldest]
+        if not expired:
+            evicted += 1
+    return evicted
+
+
+def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pending_logins: typing.Optional[int] = None):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
-    be completed. The OAuth endpoint handles everything related to logging in and out via OAuth,
-    and has the following actions:
+    be completed. At most max_pending_logins logins that have been started and not yet completed
+    are kept (DEFAULT_MAX_PENDING_LOGINS if not given); see docs/oauth.md. The OAuth endpoint
+    handles everything related to logging in and out via OAuth, and has the following actions:
 
     - /auth?login  - Initializes an OAuth login
     - /auth?login=/foo - Same as above, but redirects to /foo on successful login
@@ -121,6 +145,23 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
     """
 
     pending_states = {}  # keeps track of pending states and their expiry
+    if max_pending_logins is None:
+        max_pending_logins = DEFAULT_MAX_PENDING_LOGINS
+    if max_pending_logins < 1:
+        raise ValueError("max_pending_logins must be at least 1")
+    last_eviction_warning = 0.0
+
+    def purge_pending_states(max_size):
+        """Keeps pending_states within bounds, and says so in the log when that costs somebody their login"""
+        nonlocal last_eviction_warning
+        evicted = _purge_pending_states(pending_states, workflow_timeout, max_size)
+        # At most one warning a minute: when this happens at all, it is likely to happen a lot
+        if evicted and time.time() - last_eviction_warning >= 60:
+            last_eviction_warning = time.time()
+            LOGGER.warning(
+                "More than %d OAuth logins are pending; the oldest are being dropped and will fail",
+                max_pending_logins,
+            )
 
     @app.route(uri, methods=["GET", "POST"])
     async def oauth_endpoint():
@@ -144,6 +185,9 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 )
             state = secrets.token_hex(16)
             browser = quart.request.cookies.get(STATE_COOKIE_NAME) or secrets.token_hex(16)
+            # Logins that were started and never completed are not left to pile up: drop those
+            # that have expired, and make room for this one if there are too many all the same
+            purge_pending_states(max_pending_logins - 1)
             # Save the time we initialized this state, the optional login redirect URI,
             # and a digest of the browser cookie that is allowed to complete this login
             pending_states[state] = [time.time(), login_uri, _browser_digest(browser)]
@@ -193,6 +237,7 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 # grab the state data before using it
                 # This ensures it can only be used once
                 state_data = pending_states.pop(state, None)  # safe pop
+                purge_pending_states(max_pending_logins)  # and tidy up the ones that have expired
                 # The login may only be completed by the browser that started it
                 browser = quart.request.cookies.get(STATE_COOKIE_NAME) or ""
                 if (state_data is not None) and (not hmac.compare_digest(state_data[2], _browser_digest(browser))):

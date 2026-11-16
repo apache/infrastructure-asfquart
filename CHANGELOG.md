@@ -13,6 +13,13 @@ Changes in 0.1.14:
    warning without the token is logged instead (#85).
  - The exchange with the OAuth provider states its TLS settings instead of relying on defaults:
    TLS 1.2 or later, a valid certificate, and a matching host name (#89).
+ - OAuth logins that are started and never completed no longer stay in memory until a restart: they
+   are removed once they have expired, and no more than `generics.DEFAULT_MAX_PENDING_LOGINS`
+   (10,000) are kept, the oldest being dropped first. `setup_oauth` takes a `max_pending_logins`
+   argument (#99, #95).
+ - The cache of LDAP lookups no longer keeps expired entries: they are removed whenever a lookup is
+   made, and the cache holds at most `ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` (1,000) users, the
+   oldest lookup being dropped first (#95).
 
 Changes in 0.1.13:
  - `auth.require` accepts the classmethods of a `Requirements` subclass, so an app can add its own

@@ -22,6 +22,7 @@ VALID_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 DEFAULT_MEMBER_ATTR = "member"
 DEFAULT_OWNER_ATTR = "owner"
 DEFAULT_LDAP_CACHE_TTL = 3600  # Cache LDAP lookups for one hour
+DEFAULT_LDAP_CACHE_MAX_ENTRIES = 1000  # ... for at most this many users; the oldest lookups go first
 
 # Test if LDAP is enabled for this quart app, and if so, enable LDAP Auth support
 # This assumes the quart app was installed with asfpy[aioldap] in the Pipfile.
@@ -33,6 +34,20 @@ except ModuleNotFoundError:
     LDAP_SUPPORTED = False
 
 LDAP_CACHE: dict[str, list] = {}  # Temporary one-hour cache to speed up lookups.
+
+
+def _purge_ldap_cache(max_size: int) -> None:
+    """Removes the cached lookups that have expired, and then the oldest of the rest for as long
+    as there are more than max_size.
+
+    The dictionary keeps its entries in the order they were added, and a lookup that is renewed is
+    added again at the end, so the oldest are at the front."""
+    deadline = time.time() - DEFAULT_LDAP_CACHE_TTL
+    while LDAP_CACHE:
+        oldest = next(iter(LDAP_CACHE))
+        if LDAP_CACHE[oldest][0] > deadline and len(LDAP_CACHE) <= max_size:
+            break
+        del LDAP_CACHE[oldest]
 
 
 class LDAPClient:
@@ -55,6 +70,8 @@ class LDAPClient:
         pmc/committer role (member/owner in LDAP)"""
         all_projects = DEFAULT_LDAP_GROUP_BASE
         attrs = [DEFAULT_MEMBER_ATTR, DEFAULT_OWNER_ATTR]
+        # Lookups that have expired are not left in the cache until the same user comes back
+        _purge_ldap_cache(DEFAULT_LDAP_CACHE_MAX_ENTRIES)
         # Check LDAP cache. If found, we only need to test LDAP auth
         try:
             if self.userid in LDAP_CACHE and LDAP_CACHE[self.userid][0] > (time.time() - DEFAULT_LDAP_CACHE_TTL):
@@ -74,6 +91,9 @@ class LDAPClient:
                                 for xattr in attrs:
                                     if self.dn in project.get(xattr, []):
                                         ldap_groups[xattr].append(project_name)
+                    # Make room if the cache is full, and add this lookup at the end, as the newest
+                    LDAP_CACHE.pop(self.userid, None)
+                    _purge_ldap_cache(DEFAULT_LDAP_CACHE_MAX_ENTRIES - 1)
                     LDAP_CACHE[self.userid] = (time.time(), ldap_groups)
             return LDAP_CACHE[self.userid][1]
 

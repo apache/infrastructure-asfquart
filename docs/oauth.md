@@ -128,3 +128,52 @@ pending_states = {}  # keeps track of pending states and their expiry
 In a multi-instance or load-balanced deployment, if the OAuth callback is routed to a different instance than the one that initiated the flow, the state lookup will fail because `pending_states` is not shared across processes.
 
 See [ASVS report](https://github.com/apache/infrastructure-asfquart/issues/52)
+
+## Pending logins, and restarting the application
+
+A login is *pending* from the moment it starts (`/auth?login`) until the browser comes back
+from the OAuth provider, or until the workflow timeout (15 minutes by default) has passed.
+asfquart keeps a small record of each pending login, with its `state`, in the memory of the
+process that started it. Nothing is written to disk.
+
+### Restarting
+
+When the application restarts, its pending logins are lost. There is no way to keep them
+across a restart.
+
+- A user who was at the OAuth provider's login page during the restart is sent back with a
+  `state` that the application no longer knows, and gets `403 Invalid or expired OAuth state
+  provided`. Starting the login again works.
+- Users who are already logged in are not affected. Their sessions are in a cookie, or in the
+  application's session store (`app.sessions`), and neither is touched by a restart, provided
+  that the application keeps its secret (the `token_file` of `asfquart.construct()`) and that
+  the session store, if there is one, keeps its sessions.
+- The window is short: only logins that are between their start and their callback at that
+  moment are lost, and that is usually a matter of seconds. Restarting when few people are
+  logging in keeps it rare.
+
+The same goes for a reload during development, and for the multi-instance case above, where
+the callback reaches a process other than the one that started the login.
+
+### Limits
+
+Pending logins that are never completed do not accumulate:
+
+- Records that have passed the workflow timeout are removed whenever a login starts or a
+  callback arrives.
+- At most 10,000 logins are pending at one time, which takes about 3 MB. When one more
+  starts, the oldest is dropped to make room. If the user it belonged to then completes it,
+  they get the `403` above and have to start again. A warning is logged when this happens
+  (`More than 10000 OAuth logins are pending`), at most once a minute. In normal use the limit
+  is never reached; it is there for a client that starts logins without end.
+
+To use another limit, either set `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` before
+calling `asfquart.construct()`, or set the endpoint up yourself:
+
+```python
+import asfquart
+import asfquart.generics
+
+app = asfquart.construct("myapp", oauth=False)
+asfquart.generics.setup_oauth(app, max_pending_logins=1000)
+```
