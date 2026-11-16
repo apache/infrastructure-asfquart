@@ -156,8 +156,8 @@ def _log_ldap_busy() -> None:
         )
 
 
-async def _ldap_place(timeout: float) -> bool:
-    """Takes a place among the MAX_LDAP_OPERATIONS pieces of work in LDAP, waiting up to timeout
+async def _ldap_place(seconds: float) -> bool:
+    """Takes a place among the MAX_LDAP_OPERATIONS pieces of work in LDAP, waiting up to that many
     seconds for one if all are taken. False if there was none in that time, or if too many
     requests are waiting already. The place is given back by _ldap_place_free()."""
     global _ldap_operations
@@ -169,7 +169,7 @@ async def _ldap_place(timeout: float) -> bool:
     waiting: asyncio.Future[None] = asyncio.get_running_loop().create_future()
     _LDAP_WAITING.append(waiting)
     try:
-        await asyncio.wait({waiting}, timeout=timeout)
+        await asyncio.wait({waiting}, timeout=seconds)
     except BaseException:
         # The request has gone. If a place was given to it at that moment, it is passed on.
         if waiting.done() and not waiting.cancelled():

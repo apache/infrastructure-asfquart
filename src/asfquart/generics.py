@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generic endpoints for ASFQuart"""
 
-import asyncio
 import functools
 import hashlib
 import hmac
@@ -523,7 +522,7 @@ def setup_oauth(  # noqa: C901
                             )
                         else:
                             problem = f"provider answered with status {rv.status}"
-                except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as e:
+                except (TimeoutError, aiohttp.ClientError, OSError, ValueError) as e:
                     # OSError covers what aiohttp does not wrap, such as a CA store that cannot be loaded.
                     # Only the kind of error is logged: the message may carry the URL, and with it the code
                     problem = type(e).__name__

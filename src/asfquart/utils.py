@@ -81,7 +81,7 @@ async def _receive_form_body(max_size: int) -> None:
     # reads a body is applied here, for a client that stops sending.
     try:
         await asyncio.wait_for(receive(), timeout=request.body_timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise werkzeug.exceptions.RequestTimeout() from None
     # Iterating has used the body up. Put what was received back, as a complete body, so that
     # quart can parse the form from it, and request.files and request.get_data() work as usual.

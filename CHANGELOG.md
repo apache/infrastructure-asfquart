@@ -200,6 +200,8 @@ Changes in 0.2.0:
  Other
  - `import asfquart` now imports `asfquart.auth` as well.
  - `run()` prints an `https://` URL when a certfile is given.
+ - Python 3.11 is now the minimum version; 3.10 is no longer supported. The `exceptiongroup`
+   backport is no longer a dependency (#81).
  - Python 3.14 is tested and listed as supported.
  - The package is typed and ships a `py.typed` marker, so an app's type checker now reads
    asfquart's own annotations. It is checked with pyright in CI. What an app's checker may newly
