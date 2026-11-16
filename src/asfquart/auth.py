@@ -67,7 +67,7 @@ class AuthenticationFailed(base.ASFQuartException):
         super().__init__(self.message, self.errorcode)
 
 
-def _requirements_to_iter(args: typing.Any) -> list:
+def _requirements_to_list(args: typing.Any) -> list:
     """Converts any auth req args (single arg, list, tuple, set) to a list of requirements"""
     # No args? return empty list
     if args is None:
@@ -79,7 +79,7 @@ def _requirements_to_iter(args: typing.Any) -> list:
     # Test that each requirement is an allowed one (a classmethod of Requirements or a subclass)
     for req in args:
         owner = getattr(req, "__self__", None)
-        if not callable(req) or not isinstance(owner, type) or not issubclass(owner, Requirements):
+        if not (callable(req) and isinstance(owner, type) and issubclass(owner, Requirements)):
             raise TypeError(
                 f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class."
                 " (If this is the endpoint itself: @require can only decorate an async function.)"
@@ -94,7 +94,7 @@ def requirements_to_iter(args: typing.Any):
         DeprecationWarning,
         stacklevel=2,
     )
-    return _requirements_to_iter(args)
+    return _requirements_to_list(args)
 
 
 async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of: list, /, *args, **kwargs):
@@ -176,8 +176,8 @@ def require(
     # Otherwise the first argument, if there is one, holds requirements. They must all be met, as must
     # those given with all_of: neither replaces the other. The requirements are checked here, so that
     # a bad one is an error when the endpoint is defined, and not when it is first requested.
-    all_of_list = _requirements_to_iter(func_or_requirements) + _requirements_to_iter(all_of)
-    any_of_list = _requirements_to_iter(any_of)
+    all_of_list = _requirements_to_list(func_or_requirements) + _requirements_to_list(all_of)
+    any_of_list = _requirements_to_list(any_of)
 
     def require_with_args(original_func: typing.Callable):
         return functools.wraps(original_func)(
