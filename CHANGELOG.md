@@ -10,6 +10,8 @@ Changes in 0.1.14:
    form of an ASF user id (`generics.OAUTH_UID_RE`); anything else is a 403 (#132).
  - A bearer token presented when no `token_handler` is registered is no longer printed to stdout; a
    warning without the token is logged instead (#85).
+ - The exchange with the OAuth provider states its TLS settings instead of relying on defaults:
+   TLS 1.2 or later, a valid certificate, and a matching host name (#89).
 
 Changes in 0.1.13:
  - `auth.require` accepts the classmethods of a `Requirements` subclass, so an app can add its own

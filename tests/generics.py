@@ -3,6 +3,7 @@
 
 import asyncio
 import itertools
+import ssl
 import urllib.parse
 
 import aiohttp
@@ -385,3 +386,39 @@ async def test_callback_accepts_asf_uids(monkeypatch, uid):
     async with app.test_app():
         _client, resp = await _login_and_call_back(app, monkeypatch, provider)
         assert resp.status_code == 200
+
+
+# ---- The callback: TLS settings for the exchange ----
+
+@pytest.mark.generics
+def test_oauth_ssl_context():
+    """The provider's certificate and host name are checked, and old TLS versions are refused."""
+    ctx = asfquart.generics._oauth_ssl_context()
+    assert ctx.check_hostname is True
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+
+@pytest.mark.generics
+async def test_callback_exchange_uses_ssl_context(monkeypatch):
+    """The exchange is made over a connection that uses those TLS settings."""
+    connectors = []
+    sessions = []
+
+    class RecordingConnector:
+        def __init__(self, **kwargs):
+            connectors.append(kwargs)
+
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+
+    def client_session(**kwargs):
+        sessions.append(kwargs)
+        return provider(**kwargs)
+
+    app = _make_app()
+    monkeypatch.setattr(asfquart.generics.aiohttp, "TCPConnector", RecordingConnector)
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, client_session)
+        assert resp.status_code == 200
+    assert connectors == [{"ssl": asfquart.generics._oauth_ssl_context()}]
+    assert isinstance(sessions[0]["connector"], RecordingConnector)

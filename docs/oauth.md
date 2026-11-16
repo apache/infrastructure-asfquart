@@ -78,7 +78,8 @@ which check failed:
 Once the rules pass, the `code` is exchanged with the OAuth provider. The `code` is
 percent-encoded before it is placed in the request to the provider. The exchange is time
 limited (`asfquart.generics.OAUTH_TIMEOUT`): 10 seconds to connect, 15 seconds between reads,
-and 30 seconds in total.
+and 30 seconds in total. The connection to the provider must use TLS 1.2 or later, and the
+provider's certificate must be valid and match its host name.
 
 The session is only created if the provider answers `200` with a JSON object whose `uid` is a
 string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,

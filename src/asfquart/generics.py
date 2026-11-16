@@ -2,11 +2,13 @@
 """Generic endpoints for ASFQuart"""
 
 import asyncio
+import functools
 import hashlib
 import hmac
 import logging
 import re
 import secrets
+import ssl
 import urllib
 import urllib.parse
 import time
@@ -62,6 +64,20 @@ def _is_local_redirect(uri: str) -> bool:
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in uri):
         return False
     return True
+
+
+@functools.lru_cache(maxsize=None)
+def _oauth_ssl_context() -> ssl.SSLContext:
+    """The TLS settings for the code exchange with the OAuth provider: the provider's certificate
+    must be valid, it must be for the provider's host name, and the connection must use TLS 1.2
+    or later."""
+    # These are the values that ssl.create_default_context() gives in current versions of Python.
+    # They are set here as well, so that they are stated, and do not depend on those defaults.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
 
 
 def _is_valid_oauth_data(oauth_data) -> bool:
@@ -173,7 +189,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                 redirect_uri = state_data[1]
                 oauth_data = None
                 try:
-                    async with aiohttp.client.ClientSession(timeout=OAUTH_TIMEOUT) as session:
+                    connector = aiohttp.TCPConnector(ssl=_oauth_ssl_context())
+                    async with aiohttp.client.ClientSession(timeout=OAUTH_TIMEOUT, connector=connector) as session:
                         # The code comes from the query string, so it is quoted before it goes into ours
                         rv = await session.get(OAUTH_URL_CALLBACK % urllib.parse.quote(code, safe=""))
                         if rv.status == 200:
