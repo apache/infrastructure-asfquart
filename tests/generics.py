@@ -173,6 +173,15 @@ UNSAFE_REDIRECTS = [
     "/foo%0Abar",         # bare LF
     "/foo%00bar",         # NUL
     "/foo%7Fbar",         # DEL
+    "/foo%C2%85bar",      # U+0085 NEXT LINE, a C1 control
+    "/foo%C2%9Fbar",      # U+009F, the last C1 control
+    "/foo%E2%80%8Bbar",   # U+200B ZERO WIDTH SPACE, a format character
+    "/foo%E2%80%AEbar",   # U+202E RIGHT-TO-LEFT OVERRIDE, a format character
+    "/foo%EF%BB%BFbar",   # U+FEFF BYTE ORDER MARK, a format character
+    "/foo%EE%80%80bar",   # U+E000, private use
+    "/foo%EF%BF%BFbar",   # U+FFFF, unassigned
+    "/foo%E2%80%A8bar",   # U+2028 LINE SEPARATOR
+    "/foo%E2%80%A9bar",   # U+2029 PARAGRAPH SEPARATOR
 ]
 
 
@@ -209,6 +218,21 @@ async def test_login_accepts_path_with_query():
     async with app.test_app():
         client = app.test_client()
         resp = await client.get("/auth?login=/foo/bar%3Fa%3Db%26c%3D%2520d")
+        assert resp.status_code == 302
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("target", [
+    "/caf%C3%A9",                # e with an acute accent
+    "/%E6%97%A5%E6%9C%AC",       # CJK
+    "/foo%C2%A0bar",             # U+00A0 NO-BREAK SPACE: a separator, but not one that ends a line
+    "/foo%20bar",                # a plain space
+])
+async def test_login_accepts_printable_non_ascii(target):
+    """Only the "C" categories and the line separators are refused, not everything outside ASCII."""
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().get(f"/auth?login={target}")
         assert resp.status_code == 302
 
 
@@ -319,6 +343,9 @@ async def test_callback_exchange_is_time_limited(monkeypatch):
 @pytest.mark.parametrize("error", [
     asyncio.TimeoutError(),
     aiohttp.ClientConnectionError("https://oauth.apache.org/token-oidc?code=sekrit"),
+    OSError("could not load the CA store, while exchanging sekrit"),  # not wrapped by aiohttp
+    ssl.SSLError("handshake failed for code=sekrit"),
+    ConnectionResetError("reset, code=sekrit"),
 ])
 async def test_callback_exchange_error(monkeypatch, caplog, error):
     """A provider that cannot be reached, or is too slow, is a failed login and not a 500."""
@@ -329,8 +356,24 @@ async def test_callback_exchange_error(monkeypatch, caplog, error):
         assert resp.status_code == 403
         assert "OAuth authentication failed" in (await resp.get_data()).decode()
         assert (await client.get("/auth", scheme="https")).status_code == 404
-    assert "OAuth code exchange failed" in caplog.text
+    assert f"OAuth code exchange failed: {type(error).__name__}" in caplog.text
     assert "sekrit" not in caplog.text
+
+
+@pytest.mark.generics
+async def test_callback_ssl_context_error(monkeypatch, caplog):
+    """A failure to build the TLS settings is a failed login too, and not a 500."""
+    def broken():
+        raise OSError("no CA store")
+    monkeypatch.setattr(asfquart.generics, "_oauth_ssl_context", broken)
+    app = _make_app()
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+    async with app.test_app():
+        client, resp = await _login_and_call_back(app, monkeypatch, provider)
+        assert resp.status_code == 403
+        assert (await client.get("/auth", scheme="https")).status_code == 404
+    assert provider.urls == []  # the provider was never contacted
+    assert "OAuth code exchange failed: OSError" in caplog.text
 
 
 @pytest.mark.generics
@@ -342,6 +385,20 @@ async def test_callback_provider_refuses(monkeypatch):
         client, resp = await _login_and_call_back(app, monkeypatch, provider)
         assert resp.status_code == 403
         assert (await client.get("/auth", scheme="https")).status_code == 404
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("status", [204, 400, 401, 404, 500, 503])
+async def test_callback_logs_provider_status(monkeypatch, caplog, status):
+    """The status of a provider that does not answer 200 is in the log, to tell what is wrong at its end."""
+    app = _make_app()
+    provider = _FakeProvider(status=status, data=dict(GOOD_OAUTH_DATA))
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider, code="sekrit")
+        assert resp.status_code == 403
+    (record,) = [r for r in caplog.records if r.name == "asfquart.generics"]
+    assert record.levelname == "WARNING"
+    assert record.getMessage() == f"OAuth code exchange failed: provider answered with status {status}"
 
 
 @pytest.mark.generics
@@ -361,7 +418,7 @@ async def test_callback_provider_refuses(monkeypatch):
     {"uid": "-testuser"},
     {"uid": "_testuser"},
     {"uid": "4user"},             # must start with a letter
-    {"uid": "ab"},                # at least three characters
+    {"uid": "a"},                 # at least two characters
     {"uid": "TestUser"},
     {"uid": "test.user"},
     {"uid": "t\u00e9stuser"},
@@ -379,13 +436,56 @@ async def test_callback_rejects_response_without_valid_uid(monkeypatch, data):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("uid", ["testuser", "abc", "test-user", "test_user", "user42", "t-_", "t" * 100])
-async def test_callback_accepts_asf_uids(monkeypatch, uid):
+@pytest.mark.parametrize("uid", ["testuser", "abc", "ab", "a1", "test-user", "test_user", "user42", "t-_", "t" * 100])
+async def test_callback_accepts_asf_uids(monkeypatch, caplog, uid):
     app = _make_app()
     provider = _FakeProvider(data={"uid": uid})
     async with app.test_app():
         _client, resp = await _login_and_call_back(app, monkeypatch, provider)
         assert resp.status_code == 200
+    assert "OAuth code exchange failed" not in caplog.text  # a login that works logs no failure
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("data, problem", [
+    (None, "response is not a JSON object"),
+    (["testuser"], "response is not a JSON object"),
+    ("testuser", "response is not a JSON object"),
+    ({}, "response has no uid"),
+    ({"sub": "testuser", "nickname": "testuser"}, "response has no uid"),  # a provider with other field names
+    ({"uid": None}, "uid is not a string"),
+    ({"uid": 12345}, "uid is not a string"),
+    ({"uid": ""}, "uid is not in the form of an ASF user id"),
+    ({"uid": "a"}, "uid is not in the form of an ASF user id"),
+    ({"uid": "Test User"}, "uid is not in the form of an ASF user id"),
+])
+async def test_callback_logs_which_check_failed(monkeypatch, caplog, data, problem):
+    """The log tells a provider that changed its response from a uid that was turned away."""
+    app = _make_app()
+    provider = _FakeProvider(data=data)
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider, code="sekrit")
+        assert resp.status_code == 403
+    (record,) = [r for r in caplog.records if r.name == "asfquart.generics"]
+    assert record.levelname == "WARNING"
+    assert record.getMessage() == f"OAuth code exchange failed: {problem}"
+
+
+@pytest.mark.generics
+async def test_callback_log_has_no_secrets(monkeypatch, caplog):
+    """Neither the code, the state, nor what the provider sent is in the log."""
+    app = _make_app()
+    provider = _FakeProvider(data={"uid": "Not A Valid Uid", "email": "private@example.org"})
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", provider)
+    async with app.test_app():
+        client = app.test_client()
+        start = await client.get("/auth?login", scheme="https")
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(start.headers["Location"]).query)["state"][0]
+        resp = await client.get(f"/auth?state={state}&code=sekrit", scheme="https")
+        assert resp.status_code == 403
+    assert "OAuth code exchange failed" in caplog.text
+    for secret in ("sekrit", state, "Not A Valid Uid", "private@example.org"):
+        assert secret not in caplog.text
 
 
 # ---- The callback: TLS settings for the exchange ----

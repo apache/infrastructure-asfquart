@@ -35,6 +35,8 @@ On `/auth?login` or `/auth?login=/foo`, asfquart:
    - it contains no backslash, because browsers read `/\example.org` as `//example.org`,
    - it contains no control characters (CR, LF, tab, NUL and so on), because the target is
      later sent in a `Refresh` header, and because browsers drop tabs and newlines from a URL.
+     This covers every character in a Unicode "C" category (control, format, private use,
+     unassigned), and the line and paragraph separators U+2028 and U+2029.
 
    The same rule applies to the target of `/auth?logout=/foo`.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
@@ -83,9 +85,14 @@ provider's certificate must be valid and match its host name.
 
 The session is only created if the provider answers `200` with a JSON object whose `uid` is a
 string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,
-digits, `-` and `_`, starting with a letter, at least three characters). In every other case
+digits, `-` and `_`, starting with a letter, at least two characters). In every other case
 (the provider cannot be reached, is too slow, refuses the code, or sends something else) nothing
 is stored and the response is `403 OAuth authentication failed.`
+
+The response to the user is the same in each of those cases. What went wrong is logged as a
+warning by the `asfquart.generics` logger (`OAuth code exchange failed: ...`): the kind of
+error if the provider could not be reached, the status if it did not answer `200`, or which
+check its response failed. The log does not have the `code`, the `state`, or the response.
 
 After a successful exchange the browser is redirected to the recorded target (using a `Refresh`
 header rather than a 30x response, so that `SameSite` session cookies are kept).

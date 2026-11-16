@@ -9,9 +9,11 @@ import logging
 import re
 import secrets
 import ssl
+import unicodedata
 import urllib
 import urllib.parse
 import time
+import typing
 
 import quart
 import aiohttp
@@ -39,9 +41,10 @@ STATE_COOKIE_SECURE = True
 OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=15)
 
 # The shape of an ASF user id, as returned in the "uid" field by the OAuth provider: lower case
-# letters, digits, hyphens and underscores, starting with a letter, and at least three characters.
-# This is the same rule as AsfUid in atr/models/safe.py of apache/tooling-trusted-releases.
-OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
+# letters, digits, hyphens and underscores, starting with a letter, and at least two characters.
+# This is the rule of AsfUid in atr/models/safe.py of apache/tooling-trusted-releases, except that
+# AsfUid asks for three characters, and there are ASF users whose id has two.
+OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,8 +63,11 @@ def _is_local_redirect(uri: str) -> bool:
     if "\\" in uri:
         return False
     # No control characters: CR and LF would split a header, and browsers drop tabs and
-    # newlines from a URL before parsing it, so /<tab>/example.org is //example.org too
-    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in uri):
+    # newlines from a URL before parsing it, so /<tab>/example.org is //example.org too.
+    # This is every character in a Unicode "C" category (control, format, surrogate, private
+    # use, unassigned), as in ATR's _assert_standard_safe_syntax, and the line and paragraph
+    # separators, which are not in a "C" category but do end a line.
+    if any(unicodedata.category(char)[0] == "C" or char in "\u2028\u2029" for char in uri):
         return False
     return True
 
@@ -80,12 +86,19 @@ def _oauth_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def _is_valid_oauth_data(oauth_data) -> bool:
-    """Tests whether the OAuth provider's response identifies a user."""
+def _oauth_data_problem(oauth_data) -> typing.Optional[str]:
+    """Tests whether the OAuth provider's response identifies a user. Returns None if it does,
+    and otherwise what is wrong with it, for the log. The response itself is not in the result."""
     if not isinstance(oauth_data, dict):
-        return False
-    uid = oauth_data.get("uid")
-    return isinstance(uid, str) and OAUTH_UID_RE.fullmatch(uid) is not None
+        return "response is not a JSON object"
+    if "uid" not in oauth_data:
+        return "response has no uid"
+    uid = oauth_data["uid"]
+    if not isinstance(uid, str):
+        return "uid is not a string"
+    if not OAUTH_UID_RE.fullmatch(uid):
+        return "uid is not in the form of an ASF user id"
+    return None
 
 
 def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
@@ -195,11 +208,18 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900):
                         rv = await session.get(OAUTH_URL_CALLBACK % urllib.parse.quote(code, safe=""))
                         if rv.status == 200:
                             oauth_data = await rv.json()
-                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+                            problem = _oauth_data_problem(oauth_data)
+                        else:
+                            problem = f"provider answered with status {rv.status}"
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as e:
+                    # OSError covers what aiohttp does not wrap, such as a CA store that cannot be loaded.
                     # Only the kind of error is logged: the message may carry the URL, and with it the code
-                    LOGGER.warning("OAuth code exchange failed: %s", type(e).__name__)
-                # Nothing is stored unless the response identifies a user
-                if not _is_valid_oauth_data(oauth_data):
+                    problem = type(e).__name__
+                # Nothing is stored unless the response identifies a user. The log says what went wrong,
+                # so that a provider that is down, one that has changed its response, and a uid that was
+                # turned away can be told apart. It does not have the code, the state or the response.
+                if problem is not None:
+                    LOGGER.warning("OAuth code exchange failed: %s", problem)
                     return quart.Response(
                         status=403,
                         response="OAuth authentication failed.\n",
