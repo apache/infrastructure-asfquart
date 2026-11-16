@@ -38,18 +38,6 @@ import watchfiles
 
 from . import utils
 
-try:
-    ExceptionGroup
-except NameError:
-    # This version does not have an ExceptionGroup (introduced in
-    # Python 3.11). Somebody (hypercorn) might be using a backport
-    # of it from the "exceptiongroup" package. We'll catch that
-    # instead. Note that packages designed for less than 3.11
-    # won't be throwing ExceptionGroup (of any form) at all, which
-    # means our catching it will be a no-op.
-    if sys.version_info < (3, 11):
-        from exceptiongroup import ExceptionGroup
-
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this user only
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode

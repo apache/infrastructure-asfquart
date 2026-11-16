@@ -1,4 +1,6 @@
 Changes in 0.1.14:
+ - Python 3.11 is now the minimum version; 3.10 is no longer supported. The `exceptiongroup`
+   backport is no longer a dependency (#81).
  - Python 3.14 is tested and listed as supported.
 
 Changes in 0.1.13:
