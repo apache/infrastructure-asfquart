@@ -4,6 +4,9 @@ Changes in 0.1.14:
    browsers read `/\example.org` as `//example.org`, and the login target is sent in a `Refresh`
    header (#90, #124).
  - The OAuth code is percent-encoded before it is sent to the OAuth provider (#88).
+ - An empty token file (`apptoken.txt`) is no longer used as the application secret, which left the
+   app unable to write a session. It is treated as missing: a new secret is generated and saved.
+   The application secret is now documented, in `docs/app-secret.md` (#75).
  - The exchange with the OAuth provider has a connect timeout (10s) and a total timeout (30s) next to
    the read timeout (`generics.OAUTH_TIMEOUT`). A provider that cannot be reached or is too slow is a
    403 rather than a 500 (#130).

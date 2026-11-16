@@ -130,7 +130,19 @@ class QuartApp(quart.Quart):
                     sys.stderr.write(
                         f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
                     )
-                self.secret_key = open(_token_filename, encoding='utf-8').read()
+                with open(_token_filename, encoding='utf-8') as sfile:
+                    self.secret_key = sfile.read()
+                if not self.secret_key.strip():
+                    # An empty file is not a secret: the app may have been stopped between creating
+                    # the file and writing to it. Treat it as missing, and put a new secret in it.
+                    LOGGER.warning(f"Secrets file {_token_filename} is empty; generating a new secret")
+                    self.secret_key = secrets.token_hex()
+                    try:
+                        with open(_token_filename, "w", encoding='utf-8') as sfile:
+                            sfile.write(self.secret_key)
+                        os.chmod(_token_filename, SECRETS_FILE_MODE)
+                    except PermissionError:
+                        LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
             else:  # No token file yet, try to write, warn if we cannot
                 self.secret_key = secrets.token_hex()
                 ### TBD: throw the PermissionError once we stabilize how to locate
