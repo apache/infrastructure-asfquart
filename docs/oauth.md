@@ -30,8 +30,15 @@ the login. The rules are implemented in `setup_oauth()` in `src/asfquart/generic
 
 On `/auth?login` or `/auth?login=/foo`, asfquart:
 
-1. Rejects the redirect target with `400 Invalid redirect URI.` unless it is a local path,
-   i.e. it starts with `/` and does not start with `//`.
+1. Rejects the redirect target with `400 Invalid redirect URI.` unless it is a local path:
+   - it starts with `/` and does not start with `//`,
+   - it contains no backslash, because browsers read `/\example.org` as `//example.org`,
+   - it contains no control characters (CR, LF, tab, NUL and so on), because the target is
+     later sent in a `Refresh` header, and because browsers drop tabs and newlines from a URL.
+     This covers every character in a Unicode "C" category (control, format, private use,
+     unassigned), and the line and paragraph separators U+2028 and U+2029.
+
+   The same rule applies to the target of `/auth?logout=/foo`.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
 3. Records, in `pending_states[state]`:
    - the time the login started,
@@ -70,10 +77,25 @@ which check failed:
 403 Invalid or expired OAuth state provided. OAuth workflows must be completed within 900 seconds.
 ```
 
-Once the rules pass, the `code` is exchanged with the OAuth provider. If that exchange fails,
-the response is `403 OAuth authentication failed.` Otherwise the session is created and the
-browser is redirected to the recorded target (using a `Refresh` header rather than a 30x
-response, so that `SameSite` session cookies are kept).
+Once the rules pass, the `code` is exchanged with the OAuth provider. The `code` is
+percent-encoded before it is placed in the request to the provider. The exchange is time
+limited (`asfquart.generics.OAUTH_TIMEOUT`): 10 seconds to connect, 15 seconds between reads,
+and 30 seconds in total. The connection to the provider must use TLS 1.2 or later, and the
+provider's certificate must be valid and match its host name.
+
+The session is only created if the provider answers `200` with a JSON object whose `uid` is a
+string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,
+digits, `-` and `_`, starting with a letter, at least two characters). In every other case
+(the provider cannot be reached, is too slow, refuses the code, or sends something else) nothing
+is stored and the response is `403 OAuth authentication failed.`
+
+The response to the user is the same in each of those cases. What went wrong is logged as a
+warning by the `asfquart.generics` logger (`OAuth code exchange failed: ...`): the kind of
+error if the provider could not be reached, the status if it did not answer `200`, or which
+check its response failed. The log does not have the `code`, the `state`, or the response.
+
+After a successful exchange the browser is redirected to the recorded target (using a `Refresh`
+header rather than a 30x response, so that `SameSite` session cookies are kept).
 
 ### Configuration
 

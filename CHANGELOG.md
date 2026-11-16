@@ -1,5 +1,18 @@
 Changes in 0.1.14:
  - Python 3.14 is tested and listed as supported.
+ - The `login` and `logout` redirect targets may not contain a backslash or control characters:
+   browsers read `/\example.org` as `//example.org`, and the login target is sent in a `Refresh`
+   header (#90, #124).
+ - The OAuth code is percent-encoded before it is sent to the OAuth provider (#88).
+ - The exchange with the OAuth provider has a connect timeout (10s) and a total timeout (30s) next to
+   the read timeout (`generics.OAUTH_TIMEOUT`). A provider that cannot be reached or is too slow is a
+   403 rather than a 500 (#130).
+ - A session is only created when the OAuth provider's response is a JSON object with a `uid` in the
+   form of an ASF user id (`generics.OAUTH_UID_RE`); anything else is a 403 (#132).
+ - A bearer token presented when no `token_handler` is registered is no longer printed to stdout; a
+   warning without the token is logged instead (#85).
+ - The exchange with the OAuth provider states its TLS settings instead of relying on defaults:
+   TLS 1.2 or later, a valid certificate, and a matching host name (#89).
 
 Changes in 0.1.13:
  - `auth.require` accepts the classmethods of a `Requirements` subclass, so an app can add its own
