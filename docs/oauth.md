@@ -186,6 +186,10 @@ What to know about it:
   again without logging out first. The store above then records a logout followed by a login.
 - Do not log the `hsid`. It is a hash of the session id, but it is still what finds the
   session.
+- `quart.request.remote_addr` is the address of the reverse proxy when there is one. The
+  address of the client is then in a header such as `X-Forwarded-For`, which is only to be
+  trusted in the conditions set out at the end of the next section; otherwise it is whatever
+  the client sent.
 - A login that fails never gets as far as the store. To record those, add the hook below.
 
 ### In an `after_request` hook
@@ -249,7 +253,8 @@ How this works:
   that your proxy sets (`X-Forwarded-For`, say) if you want the address of the client, but
   only if the proxy overwrites that header and the application cannot be reached except
   through the proxy. Otherwise the header is whatever the client chose to send, and an audit
-  trail built on it can be forged. See the security notes in
+  trail built on it can be forged. This goes for the session store above as well. See the
+  security notes in
   [MDN's page on `X-Forwarded-For`](https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For).
 - If the OAuth endpoint is not at `/auth`, compare with the path that was given to
   `asfquart.construct(..., oauth=...)` or `setup_oauth()`.
