@@ -31,5 +31,6 @@ async def some_endpoint():
 - [Setting up OAuth](oauth.md)
 - [External services, and what happens when they fail](external-services.md)
 - [Session handling](sessions.md)
+- [The application secret, and its token file](app-secret.md)
 - [Authentication, Authorization, and Access](auth.md)
 - [Simplified EZT templating](templates.md)
