@@ -4,6 +4,10 @@ from . import base
 import re
 import time
 
+# The ASF LDAP server, used only for requests with an "Authorization: Basic" header: to check the
+# password (on every such request) and to look up project memberships (cached for an hour per user).
+# If it cannot be reached, those requests fail with a 500; OAuth logins and sessions do not depend
+# on it. There is no fallback server. See docs/external-services.md.
 DEFAULT_LDAP_URI = "ldaps://ldap-eu.apache.org:636"
 DEFAULT_LDAP_BASE = "uid=%s,ou=people,dc=apache,dc=org"
 DEFAULT_LDAP_GROUP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
