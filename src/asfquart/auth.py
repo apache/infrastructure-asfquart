@@ -5,6 +5,7 @@ import functools
 import typing
 import collections.abc
 import inspect
+import warnings
 
 class Requirements:
     """Various pre-defined access requirements"""
@@ -66,28 +67,72 @@ class AuthenticationFailed(base.ASFQuartException):
         super().__init__(self.message, self.errorcode)
 
 
-def requirements_to_iter(args: typing.Any):
-    """Converts any auth req args (single arg, list, tuple) to an iterable if not already one"""
+def _requirements_to_iter(args: typing.Any) -> list:
+    """Converts any auth req args (single arg, list, tuple, set) to a list of requirements"""
     # No args? return empty list
     if args is None:
         return []
     # Single arg? Convert to list first
     if not isinstance(args, collections.abc.Iterable):
         args = [args]
+    args = list(args)
     # Test that each requirement is an allowed one (a classmethod of Requirements or a subclass)
     for req in args:
         owner = getattr(req, "__self__", None)
         if not callable(req) or not isinstance(owner, type) or not issubclass(owner, Requirements):
             raise TypeError(
                 f"Authentication requirement {req} is not valid. Must belong to the asfquart.auth.Requirements class."
+                " (If this is the endpoint itself: @require can only decorate an async function.)"
             )
     return args
 
 
+def requirements_to_iter(args: typing.Any):
+    """Deprecated: this is an internal helper of require(), and will be removed from the public API."""
+    warnings.warn(
+        "asfquart.auth.requirements_to_iter is internal to asfquart and will be removed",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _requirements_to_iter(args)
+
+
+async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of: list, /, *args, **kwargs):
+    """Runs the endpoint original_func, provided there is a session and it meets the requirements"""
+    client_session = await session.read()
+    errors_list = []
+    # First off, test if we have a session at all.
+    if client_session is None:
+        raise AuthenticationFailed(Requirements.E_NOT_LOGGED_IN)
+
+    # Test all_of
+    for requirement in all_of:
+        passes, desc = requirement(client_session)
+        if not passes:
+            errors_list.append(desc)
+    # If we encountered an error, bail early
+    if errors_list:
+        raise AuthenticationFailed("\n".join(errors_list))
+
+    # So far, so good? Run the any_of if present, break if any single test succeeds.
+    for requirement in any_of:
+        passes, desc = requirement(client_session)
+        if not passes:
+            errors_list.append(desc)
+        else:
+            # If a test passed, we can clear the failures and pass
+            errors_list.clear()
+            break
+    # If no tests passed, errors_list should have at least one entry.
+    if errors_list:
+        raise AuthenticationFailed("\n".join(errors_list))
+    return await original_func(*args, **kwargs)
+
+
 def require(
-    func: typing.Optional[typing.Callable] = None,
-    all_of: typing.Optional[typing.Iterable] = None,
-    any_of: typing.Optional[typing.Iterable] = None,
+    func_or_requirements: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
+    all_of: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
+    any_of: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
 ):
     """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
     of requirements. By default, all requirements must be satisfied, though this can be made optional by
@@ -102,70 +147,41 @@ def require(
     In addition, any endpoint decorated with @require will implicitly require ANY form of
     authenticated session. This is mandatory and also works as a bare decorator.
 
+    The first argument is optional, and is one of two things:
+
+    - the endpoint itself (an async function), when @require is used as a bare decorator
+    - a requirement, or a collection of requirements, when it is used as @require(...). These are
+      `all_of` requirements, and are added to any that are given with the `all_of` keyword.
+
     Examples:
         @require(Requirements.member)  # Require session, require ASF member
         @require  # Require any authed session
+        @require()  # The same: require any authed session
         @require({Requirements.mfa_enabled, Requirements.chair})  # Require any project chair with MFA-enabled session
         @require(all_of=Requirements.mfa_enabled, any_of={Requirements.member, Requirements.chair})
           # Require either ASF member OR project chair, but also require MFA enabled in any case.
+        @require(Requirements.mfa_enabled, any_of={Requirements.member, Requirements.chair})
+          # The same again, with the requirement that must always be met given as the first argument.
     """
 
-    async def require_wrapper(original_func: typing.Callable, all_of=None, any_of=None, *args, **kwargs):
-        client_session = await session.read()
-        errors_list = []
-        # First off, test if we have a session at all.
-        if client_session is None:
-            raise AuthenticationFailed(Requirements.E_NOT_LOGGED_IN)
+    # If the decorator is used without arguments, the first argument is the endpoint (an async function).
+    # In this case, we return a simple wrapper that only requires a session.
+    if inspect.iscoroutinefunction(func_or_requirements):
+        if all_of is not None or any_of is not None:
+            raise TypeError("Requirements must be given as @require(...), placed above the endpoint.")
+        return functools.wraps(func_or_requirements)(
+            functools.partial(_require_wrapper, func_or_requirements, [], [])
+        )
 
-        # Test all_of
-        all_of_set = requirements_to_iter(all_of)
-        for requirement in all_of_set:
-            passes, desc = requirement(client_session)
-            if not passes:
-                errors_list.append(desc)
-        # If we encountered an error, bail early
-        if errors_list:
-            raise AuthenticationFailed("\n".join(errors_list))
+    # Otherwise the first argument, if there is one, holds requirements. They must all be met, as must
+    # those given with all_of: neither replaces the other. The requirements are checked here, so that
+    # a bad one is an error when the endpoint is defined, and not when it is first requested.
+    all_of_list = _requirements_to_iter(func_or_requirements) + _requirements_to_iter(all_of)
+    any_of_list = _requirements_to_iter(any_of)
 
-        # So far, so good? Run the any_of if present, break if any single test succeeds.
-        any_of_set = requirements_to_iter(any_of)
-        for requirement in any_of_set:
-            passes, desc = requirement(client_session)
-            if not passes:
-                errors_list.append(desc)
-            else:
-                # If a test passed, we can clear the failures and pass
-                errors_list.clear()
-                break
-        # If no tests passed, errors_list should have at least one entry.
-        if errors_list:
-            raise AuthenticationFailed("\n".join(errors_list))
-        if args or kwargs:
-            return await original_func(*args, **kwargs)
-        return await original_func()
-
-    # If decorator is passed without arguments, func will be an async function
-    # In this case, we will return a simple wrapper.
-    if inspect.iscoroutinefunction(func):
-        return functools.wraps(func)(functools.partial(require_wrapper, func))
-
-    # If passed with args, we construct a "double wrapper" and return it.
     def require_with_args(original_func: typing.Callable):
-        # If decorated without keywords, func disappears in the outer scope and is replaced with all_of,
-        # so we account for this by swapping around the arguments just in time if needed.
-        if not inspect.iscoroutinefunction(func):
-            return functools.wraps(original_func)(
-                functools.partial(
-                    require_wrapper,
-                    original_func,
-                    all_of=requirements_to_iter(all_of or func),
-                    any_of=requirements_to_iter(any_of),
-                )
-            )
         return functools.wraps(original_func)(
-            functools.partial(
-                require_wrapper, original_func, all_of=requirements_to_iter(all_of), any_of=requirements_to_iter(any_of)
-            )
+            functools.partial(_require_wrapper, original_func, all_of_list, any_of_list)
         )
 
     return require_with_args
