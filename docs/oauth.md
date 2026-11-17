@@ -236,6 +236,15 @@ How this works:
   decision. The test for the callback has to be this exact: anybody can send any query string,
   and `/auth?code=&state=` from a user who is logged in already answers `200` with their
   session, which a looser test would record as a login that never happened.
+- The hook does not look at the method of the request. The OAuth endpoint takes the callback
+  by `POST` as well as by `GET`, and a login that is completed by `POST` is still a login. A
+  hook that recorded `GET` requests only would let one go by unrecorded.
+- The hook calls `asfquart.session.read()` without naming an app, and that is deliberate.
+  The OAuth endpoint writes the session for `asfquart.APP`, the application that was
+  constructed last, and `read()` with no app looks in the same place. A process is expected
+  to hold one application, and then there is nothing to choose. If a process does construct
+  more than one, passing the hook's own `app` to `read()` would look for the session where
+  the endpoint did not put it, and a login that worked would be recorded as one that failed.
 - The callback answers `200` when the login succeeded, and by then the session has been
   created, so the hook can read the user id from it. The hook still allows for the session
   not being there, and then records a failed login, so that it cannot raise an error of its

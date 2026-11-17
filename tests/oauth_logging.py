@@ -435,3 +435,56 @@ async def test_areplace_needs_replace_or_register(monkeypatch):
         client = app.test_client()
         await _login(client, _FakeProvider(data={"uid": "testuser"}), monkeypatch)
         assert (await client.get("/change", scheme="https")).status_code == 500
+
+
+# ---- The method of the callback, and more than one app ----
+
+@pytest.mark.generics
+async def test_callback_by_post_is_a_login_and_is_logged(monkeypatch, caplog):
+    """The OAuth endpoint takes the callback by POST as well as by GET. A login that is completed
+    by POST is a login, so the hook must record it: a hook that looked at GET only would miss it."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", _FakeProvider(data={"uid": "testuser"}))
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        state = await _start_login(client)
+        resp = await client.post(f"/auth?state={state}&code=sekrit", scheme="https")
+        assert resp.status_code == 200
+        session = await client.get("/auth", scheme="https")
+        assert (await session.get_json())["uid"] == "testuser"       # the POST did log the user in
+    (record,) = _audit(caplog)
+    assert "login succeeded: uid=testuser" in record.getMessage()
+
+
+@pytest.mark.generics
+async def test_refused_post_callback_is_logged_as_a_failure(caplog):
+    """A callback posted from another site is refused before anything else, and is a failed login."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().post(
+            "/auth?state=made-up&code=sekrit", scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        assert resp.status_code == 403
+    (record,) = _audit(caplog)
+    assert "login failed: status=403" in record.getMessage()
+
+
+@pytest.mark.generics
+async def test_hook_finds_the_session_where_the_endpoint_put_it(monkeypatch, caplog):
+    """The OAuth endpoint writes the session for asfquart.APP, the app that was constructed last,
+    and session.read() with no app reads it from there. The hook must read it the same way. If it
+    passed its own app, and another app had been constructed since, it would look in the wrong
+    place and record a login that worked as one that failed."""
+    caplog.set_level(logging.INFO, logger="myapp.audit")
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", _FakeProvider(data={"uid": "testuser"}))
+    app = _make_app()
+    other = asfquart.construct(f"test_oauth_logging_other_{next(_counter)}", token_file=None)
+    assert asfquart.APP is other and other is not app      # the endpoint and the hook both look here
+    async with app.test_app():
+        client = app.test_client()
+        state = await _start_login(client)
+        resp = await client.get(f"/auth?state={state}&code=sekrit", scheme="https")
+        assert resp.status_code == 200
+    (record,) = _audit(caplog)
+    assert "login succeeded: uid=testuser" in record.getMessage()
