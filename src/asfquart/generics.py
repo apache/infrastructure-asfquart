@@ -36,6 +36,11 @@ DEFAULT_OAUTH_URI = "/auth"
 # The default for setup_oauth()'s callback_host, e.g. "https://myapp.apache.org" (#93)
 OAUTH_CALLBACK_HOST = None
 
+# The default for setup_oauth()'s logout_by_get. A logout changes state, so it ought to be a POST
+# (#69). GET is still accepted because many apps have a logout link; an app whose logout is a form
+# can set this to False, and a GET logout is then a 405. See docs/oauth.md.
+OAUTH_LOGOUT_BY_GET = True
+
 # The pending login is tied to the browser that started it, via this cookie.
 # SameSite=Lax is required: the callback is a top level navigation from the
 # OAuth provider, and a Strict cookie is not sent when the provider is on a
@@ -106,6 +111,36 @@ async def _exchange_code(session, code):
         )
     # The code comes from the query string, so it is quoted before it goes into ours
     return await session.get(url % urllib.parse.quote(code, safe=""))
+
+
+_warned_get_logout = False  # so the warning below is logged once per process, not per logout
+
+
+def _refuse_get_logout(logout_by_get):
+    """Says whether a logout that was requested with GET is to be refused: returns the response to
+    send, or None if the logout may go ahead. A refused logout leaves the session alone and clears
+    nothing in the browser. logout_by_get is setup_oauth()'s argument of that name."""
+    global _warned_get_logout
+    # OAUTH_LOGOUT_BY_GET is read here, not at setup, so one set late still applies
+    if not (logout_by_get if logout_by_get is not None else OAUTH_LOGOUT_BY_GET):
+        return quart.Response(
+            status=405,
+            response="Log out with a POST request.\n",
+            headers={"Allow": "POST"},
+            content_type="text/plain; charset=utf-8"
+        )
+    # The same check as for a POST, on what the browser says about where the request came from.
+    # "none" is allowed as well: it is the user's own doing, a typed address or a bookmark. A
+    # browser that does not send the header is let through, as is a client that is not a browser.
+    if quart.request.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "same-site", "none"):
+        return quart.Response(status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8")
+    if not _warned_get_logout:
+        _warned_get_logout = True
+        LOGGER.warning(
+            "A logout was requested with GET. A logout changes state, so it should be a POST: use a form"
+            " rather than a link, and then set asfquart.generics.OAUTH_LOGOUT_BY_GET = False. See docs/oauth.md"
+        )
+    return None
 
 
 def _browser_digest(browser):
@@ -189,6 +224,7 @@ def setup_oauth(
     workflow_timeout: int = 900,
     max_pending_logins: typing.Optional[int] = None,
     callback_host: typing.Optional[str] = None,
+    logout_by_get: typing.Optional[bool] = None,
 ):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
@@ -205,6 +241,10 @@ def setup_oauth(
     "https://myapp.apache.org" (OAUTH_CALLBACK_HOST if not given). Without one, this generic route
     expects the Host: header of the request to be accurate, which means setting
     "ProxyPreserveHost On" in your httpd config if proxying.
+
+    logout_by_get says whether a logout may be requested with GET as well as with POST
+    (OAUTH_LOGOUT_BY_GET if not given, which is True). With False a GET logout is a 405. Either
+    way, a logout that another site asked for is refused; see docs/oauth.md.
     """
 
     host = callback_host if callback_host is not None else OAUTH_CALLBACK_HOST
@@ -253,6 +293,8 @@ def setup_oauth(
                     response="CSRF Protection\n",
                     content_type="text/plain; charset=utf-8"
                 )
+        # Of the requests below, three change state. Starting a login and completing one have to
+        # work with GET, because the browser arrives at both by a redirect. Logging out does not.
         # Init oauth login
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
@@ -290,6 +332,10 @@ def setup_oauth(
 
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
+            if quart.request.method != "POST":
+                refusal = _refuse_get_logout(logout_by_get)
+                if refusal is not None:
+                    return refusal
             await asfquart.session.aclear()
             if logout_uri and not _is_local_redirect(logout_uri):
                 response = quart.Response(
