@@ -185,8 +185,9 @@ parsed. The check is in `asfquart/utils.py`, and is described in
 |---|---|---|
 | A request body whose content type is one of `asfquart.utils.FORM_CONTENT_TYPES` | At most `MAX_FORM_CONTENT_LENGTH` bytes (102,400 by default), and at most quart's `MAX_CONTENT_LENGTH` | `413` |
 | A form sent without a `Content-Length` | Arrives within quart's body timeout | `408` |
+| A JSON body | JSON, and a JSON object: not a list, a string, a number, `true`, `false` or `null` | `400` |
 
-The limit applies to forms. A JSON body is limited only by quart's `MAX_CONTENT_LENGTH`.
+The size limit applies to forms. A JSON body is limited only by quart's `MAX_CONTENT_LENGTH`.
 
 ## File names in a URL
 
@@ -274,9 +275,9 @@ to check:
   as they were sent: any names, any values, all of them strings. Values from the query
   string, the form and a JSON body are merged into one dictionary, the later replacing the
   earlier, so a field in the body replaces one of the same name in the query string.
-- **A JSON body.** It is parsed, and a body that is not JSON is a `400`. A JSON body that is
-  not an object, such as a list or a number, is not caught: `formdata()` fails on it and the
-  request is a `500`.
+- **The contents of a JSON object.** `formdata()` checks that a JSON body is an object, and
+  returns its fields as they were sent: any names, and values of any JSON type, nested to
+  any depth.
 - **Query string parameters** of the application's own endpoints, and **parts of the URL**
   other than the `filename` converter above.
 - **Request headers**, other than `Authorization` and, on the OAuth endpoint,

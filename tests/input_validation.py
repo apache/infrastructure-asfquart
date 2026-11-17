@@ -247,13 +247,12 @@ async def test_json_body_that_is_not_json_is_a_400():
     assert resp.status_code == 400
 
 
-@pytest.mark.parametrize("body", [b"[1, 2]", b'"text"', b"5", b"null"])
-async def test_json_body_that_is_not_an_object_is_not_caught(body):
-    """As the page says: formdata() fails on it. If this is ever changed to a 400, change the page too."""
+@pytest.mark.parametrize("body", [b"[1, 2]", b'[["a", 1]]', b'"text"', b"5", b"true", b"null"])
+async def test_json_body_that_is_not_an_object_is_a_400(body):
     app = _app()
-    app.config["PROPAGATE_EXCEPTIONS"] = False
+    app.config["PROPAGATE_EXCEPTIONS"] = False  # an error in the endpoint would be a 500, not raised here
     resp = await app.test_client().post("/test-form", data=body, headers={"Content-Type": "application/json"})
-    assert resp.status_code == 500
+    assert resp.status_code == 400
 
 
 @pytest.mark.parametrize("value", [1, "true", "yes", [True]])
