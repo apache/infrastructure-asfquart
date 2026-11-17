@@ -522,3 +522,271 @@ async def test_callback_exchange_uses_ssl_context(monkeypatch):
         assert resp.status_code == 200
     assert connectors == [{"ssl": asfquart.generics._oauth_ssl_context()}]
     assert isinstance(sessions[0]["connector"], RecordingConnector)
+
+
+# ---- Pending logins: expired ones are removed, and there is a limit to how many are kept ----
+
+def _pending(*ages, now=1000.0):
+    """A pending_states dictionary with one login for each age (in seconds), oldest first"""
+    return {f"state{index}": [now - age, None, "digest"] for index, age in enumerate(ages)}
+
+
+class _Clock:
+    """Stands in for the time module inside asfquart.generics"""
+
+    def __init__(self, now=1000.0):
+        self.now = now
+
+    def time(self):
+        return self.now
+
+
+@pytest.mark.generics
+def test_purge_removes_expired_logins(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "time", _Clock())
+    pending = _pending(2000, 901, 900, 10, 0)  # with a timeout of 900 seconds, the first two have expired
+    evicted = asfquart.generics._purge_pending_states(pending, 900, 100)
+    assert list(pending) == ["state2", "state3", "state4"]
+    assert evicted == 0
+
+
+@pytest.mark.generics
+def test_purge_keeps_to_the_limit_by_dropping_the_oldest(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "time", _Clock())
+    pending = _pending(50, 40, 30, 20, 10)
+    evicted = asfquart.generics._purge_pending_states(pending, 900, 3)
+    assert list(pending) == ["state2", "state3", "state4"]
+    assert evicted == 2
+
+
+@pytest.mark.generics
+def test_purge_counts_only_unexpired_logins_as_evicted(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "time", _Clock())
+    pending = _pending(5000, 4000, 30, 20, 10)
+    evicted = asfquart.generics._purge_pending_states(pending, 900, 2)
+    assert list(pending) == ["state3", "state4"]
+    assert evicted == 1
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("pending", [{}, _pending(10), _pending(30, 20, 10)])
+def test_purge_leaves_alone_what_is_within_bounds(monkeypatch, pending):
+    monkeypatch.setattr(asfquart.generics, "time", _Clock())
+    before = dict(pending)
+    assert asfquart.generics._purge_pending_states(pending, 900, 3) == 0
+    assert pending == before
+
+
+@pytest.mark.generics
+def test_purge_can_empty_the_dictionary(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "time", _Clock())
+    pending = _pending(30, 20, 10)
+    assert asfquart.generics._purge_pending_states(pending, 900, 0) == 3
+    assert pending == {}
+
+
+def _make_app_with_limit(max_pending_logins, workflow_timeout=900):
+    """An app whose OAuth endpoint is set up by hand, to choose the limits"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, workflow_timeout=workflow_timeout, max_pending_logins=max_pending_logins)
+    return app
+
+
+def _pending_states_of(app):
+    """The pending logins of the app's OAuth endpoint, which it keeps to itself"""
+    endpoint = app.view_functions["oauth_endpoint"]
+    cells = dict(zip(endpoint.__code__.co_freevars, endpoint.__closure__))
+    return cells["pending_states"].cell_contents
+
+
+async def _start(client):
+    """Starts a login, and returns its state"""
+    resp = await client.get("/auth?login", scheme="https")
+    assert resp.status_code == 302
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(resp.headers["Location"]).query)["state"][0]
+
+
+@pytest.mark.generics
+async def test_abandoned_logins_are_removed_once_expired(monkeypatch):
+    """Logins that are started and never completed do not stay in memory for ever."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(1000)
+    async with app.test_app():
+        abandoned = [await _start(app.test_client()) for _ in range(5)]
+        assert list(_pending_states_of(app)) == abandoned
+        clock.now += 899
+        fresh = await _start(app.test_client())
+        assert len(_pending_states_of(app)) == 6   # none has expired yet
+        clock.now += 2
+        newest = await _start(app.test_client())
+        assert list(_pending_states_of(app)) == [fresh, newest]
+
+
+@pytest.mark.generics
+async def test_callback_removes_expired_logins(monkeypatch):
+    """Expired logins also go when a callback arrives, whatever it is for."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(1000)
+    async with app.test_app():
+        for _ in range(5):
+            await _start(app.test_client())
+        clock.now += 901
+        resp = await app.test_client().get("/auth?state=made-up&code=abc", scheme="https")
+        assert resp.status_code == 403
+        assert _pending_states_of(app) == {}
+
+
+@pytest.mark.generics
+async def test_pending_logins_are_limited(monkeypatch, caplog):
+    """With more logins pending than the limit, the oldest is dropped and fails; the others still work."""
+    app = _make_app_with_limit(3)
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", provider)
+    async with app.test_app():
+        clients = [app.test_client() for _ in range(4)]
+        states = [await _start(client) for client in clients]
+        assert list(_pending_states_of(app)) == states[1:]
+
+        dropped = await clients[0].get(f"/auth?state={states[0]}&code=abc", scheme="https")
+        assert dropped.status_code == 403
+        assert "Invalid or expired OAuth state" in (await dropped.get_data()).decode()
+
+        for client, state in zip(clients[1:], states[1:]):
+            resp = await client.get(f"/auth?state={state}&code=abc", scheme="https")
+            assert resp.status_code == 200
+        assert _pending_states_of(app) == {}
+    warnings = [r for r in caplog.records if r.name == "asfquart.generics" and "pending" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "More than 3 OAuth logins are pending" in warnings[0].getMessage()
+    for state in states:
+        assert state not in caplog.text
+
+
+@pytest.mark.generics
+async def test_pending_logins_stay_within_the_limit_under_a_flood(caplog):
+    """However many logins are started, no more than the limit are kept, and the log is not flooded too."""
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        client = app.test_client()
+        for _ in range(200):
+            await client.get("/auth?login", scheme="https")
+            assert len(_pending_states_of(app)) <= 10
+    warnings = [r for r in caplog.records if r.name == "asfquart.generics" and "pending" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+@pytest.mark.generics
+async def test_no_warning_when_only_expired_logins_are_removed(monkeypatch, caplog):
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(3)
+    async with app.test_app():
+        for _ in range(3):
+            await _start(app.test_client())
+            clock.now += 1000   # each has expired by the time the next one starts
+    assert len(_pending_states_of(app)) == 1
+    assert "pending" not in caplog.text
+
+
+@pytest.mark.generics
+def test_default_limit_on_pending_logins(monkeypatch):
+    """The limit is DEFAULT_MAX_PENDING_LOGINS, as it is when the endpoint is set up."""
+    assert asfquart.generics.DEFAULT_MAX_PENDING_LOGINS == 10000
+    monkeypatch.setattr(asfquart.generics, "DEFAULT_MAX_PENDING_LOGINS", 2)
+    app = _make_app()   # set up by asfquart.construct()
+    endpoint = app.view_functions["oauth_endpoint"]
+    cells = dict(zip(endpoint.__code__.co_freevars, endpoint.__closure__))
+    assert cells["max_pending_logins"].cell_contents == 2
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("limit", [0, -1])
+def test_limit_on_pending_logins_must_be_positive(limit):
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    with pytest.raises(ValueError):
+        asfquart.generics.setup_oauth(app, max_pending_logins=limit)
+
+
+# ---- The redirect target of a login is kept in memory, so its length is limited ----
+
+@pytest.mark.generics
+@pytest.mark.parametrize("action", ["login", "logout"])
+async def test_redirect_target_has_a_maximum_length(action):
+    limit = asfquart.generics.MAX_REDIRECT_URI_LENGTH
+    assert limit == 2048
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        longest = "/" + "a" * (limit - 1)
+        assert (await client.get(f"/auth?{action}={longest}", scheme="https")).status_code == 302
+        too_long = await client.get(f"/auth?{action}={longest}a", scheme="https")
+        assert too_long.status_code == 400
+        assert "Invalid redirect" in (await too_long.get_data()).decode()
+
+
+@pytest.mark.generics
+async def test_too_long_redirect_target_is_not_kept():
+    """A login with a target that is refused leaves nothing in memory."""
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        resp = await app.test_client().get("/auth?login=/" + "a" * 5000, scheme="https")
+        assert resp.status_code == 400
+    assert _pending_states_of(app) == {}
+
+
+# ---- The warning says how many logins were dropped ----
+
+def _pending_warnings(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "asfquart.generics" and "pending" in r.getMessage()]
+
+
+@pytest.mark.generics
+async def test_warning_counts_the_logins_that_were_dropped(monkeypatch, caplog):
+    """One warning a minute at most, and each says how many logins were dropped since the one before:
+    a single burst is one warning with a small number, and lasting pressure is one every minute."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        client = app.test_client()
+        for _ in range(11):                                  # the eleventh drops one
+            await client.get("/auth?login", scheme="https")
+        assert _pending_warnings(caplog) == [
+            "More than 10 OAuth logins are pending; 1 dropped since the last warning, oldest first."
+            " A dropped login fails if its user completes it"
+        ]
+        for _ in range(50):                                  # within the minute: counted, not logged
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 1
+        clock.now += 61
+        await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 2
+        assert "; 51 dropped since the last warning" in _pending_warnings(caplog)[1]
+        # A warning goes out with the first drop after a minute; later drops wait for the next one
+        clock.now += 61
+        for _ in range(3):
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 3
+        assert "; 1 dropped since the last warning" in _pending_warnings(caplog)[2]
+        clock.now += 61
+        await client.get("/auth?login", scheme="https")
+        assert "; 3 dropped since the last warning" in _pending_warnings(caplog)[3]
+
+
+@pytest.mark.generics
+async def test_no_warning_once_nothing_is_being_dropped(monkeypatch, caplog):
+    """The count is not carried over into a warning when the drops have stopped and the rest expired."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        client = app.test_client()
+        for _ in range(11):
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 1
+        clock.now += 1000                                    # all of them expire
+        for _ in range(5):
+            await client.get("/auth?login", scheme="https")  # only expired logins are removed now
+        assert len(_pending_warnings(caplog)) == 1

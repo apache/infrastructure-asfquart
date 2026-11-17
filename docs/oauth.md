@@ -36,7 +36,9 @@ On `/auth?login` or `/auth?login=/foo`, asfquart:
    - it contains no control characters (CR, LF, tab, NUL and so on), because the target is
      later sent in a `Refresh` header, and because browsers drop tabs and newlines from a URL.
      This covers every character in a Unicode "C" category (control, format, private use,
-     unassigned), and the line and paragraph separators U+2028 and U+2029.
+     unassigned), and the line and paragraph separators U+2028 and U+2029,
+   - it is no longer than 2,048 characters (`asfquart.generics.MAX_REDIRECT_URI_LENGTH`),
+     because the target of a login is kept in memory until the login completes or expires.
 
    The same rule applies to the target of `/auth?logout=/foo`.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
@@ -279,3 +281,77 @@ pending_states = {}  # keeps track of pending states and their expiry
 In a multi-instance or load-balanced deployment, if the OAuth callback is routed to a different instance than the one that initiated the flow, the state lookup will fail because `pending_states` is not shared across processes.
 
 See [ASVS report](https://github.com/apache/infrastructure-asfquart/issues/52)
+
+## Pending logins, and restarting the application
+
+A login is *pending* from the moment it starts (`/auth?login`) until the browser comes back
+from the OAuth provider, or until the workflow timeout (15 minutes by default) has passed.
+asfquart keeps a small record of each pending login, with its `state`, in the memory of the
+process that started it. Nothing is written to disk.
+
+### Restarting
+
+When the application restarts, its pending logins are lost. There is no way to keep them
+across a restart.
+
+- A user who was at the OAuth provider's login page during the restart is sent back with a
+  `state` that the application no longer knows, and gets `403 Invalid or expired OAuth state
+  provided`. Starting the login again works.
+- Users who are already logged in are not affected. Their sessions are in a cookie, or in the
+  application's session store (`app.sessions`), and neither is touched by a restart, provided
+  that the application keeps its secret (the `token_file` of `asfquart.construct()`) and that
+  the session store, if there is one, keeps its sessions.
+- The window is short: only logins that are between their start and their callback at that
+  moment are lost, and that is usually a matter of seconds. Restarting when few people are
+  logging in keeps it rare.
+
+The same goes for a reload during development, and for the multi-instance case above, where
+the callback reaches a process other than the one that started the login.
+
+### Limits
+
+Pending logins that are never completed do not accumulate:
+
+- Records that have passed the workflow timeout are removed whenever a login starts or a
+  callback arrives.
+- At most 10,000 logins are pending at one time. When one more starts, the oldest is dropped
+  to make room. If the user it belonged to then completes it, they get the `403` above and
+  have to start again. In normal use the limit is never reached; it is there for a client
+  that starts logins without end.
+- The memory that 10,000 pending logins take depends on their redirect targets, which is why
+  those have a maximum length: roughly 3 MB when the targets are short, as they usually are,
+  and roughly 24 MB if every one is as long as it may be.
+- A warning is logged when logins are dropped for want of room, at most once a minute:
+  `More than 10000 OAuth logins are pending; 37 dropped since the last warning, oldest first.`
+  The number is how many were dropped since the warning before. One warning with a small
+  number is a burst. A warning every minute, with large numbers, is pressure that lasts, and
+  may be an attack.
+
+#### A flood of logins
+
+Somebody who starts logins fast enough can push real ones out before their users come back
+from the OAuth provider. With the default limit, and a login that takes half a minute to
+complete, that needs more than 300 new logins a second, kept up for as long as the attack is
+to last. A real login that is pushed out fails with the `403` above, and works when tried
+again once the flood has stopped.
+
+No limit on a table of pending logins avoids this altogether. The alternative, refusing new
+logins while the table is full, would let the same flood lock everybody out for the whole
+workflow timeout after it had stopped. Dropping the oldest ends the damage when the flood
+ends.
+
+asfquart does not limit how fast one client may start logins. It cannot tell clients apart
+reliably: behind a reverse proxy every request comes from the proxy's address. The place to
+limit the rate of requests to `/auth?login` is the reverse proxy, which does know the client.
+Raising `max_pending_logins` also raises the rate that a flood has to keep up.
+
+To use another limit, either set `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` before
+calling `asfquart.construct()`, or set the endpoint up yourself:
+
+```python
+import asfquart
+import asfquart.generics
+
+app = asfquart.construct("myapp", oauth=False)
+asfquart.generics.setup_oauth(app, max_pending_logins=1000)
+```

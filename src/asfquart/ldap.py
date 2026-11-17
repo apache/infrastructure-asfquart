@@ -21,6 +21,7 @@ VALID_UID_RE = base.ASF_UID_RE
 DEFAULT_MEMBER_ATTR = "member"
 DEFAULT_OWNER_ATTR = "owner"
 DEFAULT_LDAP_CACHE_TTL = 3600  # Cache LDAP lookups for one hour
+DEFAULT_LDAP_CACHE_MAX_ENTRIES = 1000  # ... for at most this many users; the least recently used go first
 
 # Test if LDAP is enabled for this quart app, and if so, enable LDAP Auth support
 # This assumes the quart app was installed with asfpy[aioldap] in the Pipfile.
@@ -32,6 +33,20 @@ except ModuleNotFoundError:
     LDAP_SUPPORTED = False
 
 LDAP_CACHE: dict[str, list] = {}  # Temporary one-hour cache to speed up lookups.
+
+
+def _purge_ldap_cache(max_size: int) -> None:
+    """Removes the cached lookups that have expired, and then those that were used least recently
+    for as long as there are more than max_size.
+
+    The dictionary is kept in order of use: a lookup goes to the end when it is made, and again
+    each time it is used, so the ones at the front are the ones that have gone longest unused.
+    That is not the order of their ages, so every entry is looked at for expiry."""
+    deadline = time.time() - DEFAULT_LDAP_CACHE_TTL
+    for userid in [userid for userid, entry in LDAP_CACHE.items() if entry[0] <= deadline]:
+        del LDAP_CACHE[userid]
+    while LDAP_CACHE and len(LDAP_CACHE) > max_size:
+        del LDAP_CACHE[next(iter(LDAP_CACHE))]
 
 
 class LDAPClient:
@@ -54,11 +69,21 @@ class LDAPClient:
         pmc/committer role (member/owner in LDAP)"""
         all_projects = DEFAULT_LDAP_GROUP_BASE
         attrs = [DEFAULT_MEMBER_ATTR, DEFAULT_OWNER_ATTR]
+        # Lookups that have expired are not left in the cache until the same user comes back
+        _purge_ldap_cache(DEFAULT_LDAP_CACHE_MAX_ENTRIES)
         # Check LDAP cache. If found, we only need to test LDAP auth
         try:
-            if self.userid in LDAP_CACHE and LDAP_CACHE[self.userid][0] > (time.time() - DEFAULT_LDAP_CACHE_TTL):
+            # The lookup is held here, and not read from the cache again further down: while this
+            # request waits for LDAP, another may remove it from the cache.
+            cached = LDAP_CACHE.get(self.userid)
+            if cached is not None and cached[0] > (time.time() - DEFAULT_LDAP_CACHE_TTL):
                 async with self.client.connect():
                     pass
+                # The password was right, so this counts as a use: move the lookup to the end, where
+                # it is the last to be dropped. (Unless it has been removed or renewed meanwhile.)
+                if LDAP_CACHE.get(self.userid) is cached:
+                    LDAP_CACHE[self.userid] = LDAP_CACHE.pop(self.userid)
+                return cached[1]
             else:
                 ldap_groups = {attr: [] for attr in attrs}
                 async with self.client.connect() as conn:
@@ -73,8 +98,11 @@ class LDAPClient:
                                 for xattr in attrs:
                                     if self.dn in project.get(xattr, []):
                                         ldap_groups[xattr].append(project_name)
+                    # Make room if the cache is full, and add this lookup at the end, as the newest
+                    LDAP_CACHE.pop(self.userid, None)
+                    _purge_ldap_cache(DEFAULT_LDAP_CACHE_MAX_ENTRIES - 1)
                     LDAP_CACHE[self.userid] = (time.time(), ldap_groups)
-            return LDAP_CACHE[self.userid][1]
+                return ldap_groups
 
         except bonsai.errors.AuthenticationError as e:
             raise base.ASFQuartException(f"Invalid credentials provided: {e}", errorcode=403)

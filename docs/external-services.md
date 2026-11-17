@@ -39,10 +39,10 @@ If it cannot be reached:
 - The user sees an error from their browser, or from the provider, in place of the login
   page. They are not returned to the application.
 - No session is created. The login that was started is abandoned. Its `state` is no longer
-  accepted after the workflow timeout (15 minutes by default), but the record of it is only
-  removed when a callback arrives for it. For an abandoned login none does, so the record
-  stays in memory until the application restarts. Each one is small, but a provider that is
-  down for a long time, or a client that starts logins and never finishes them, adds up.
+  accepted after the workflow timeout (15 minutes by default), and the record of it is
+  removed the next time a login starts or a callback arrives. However long the provider is
+  down, no more than 10,000 such records are kept; see
+  [Pending logins](oauth.md#pending-logins-and-restarting-the-application).
 - Users who are already logged in are not affected.
 
 ### Token endpoint (`OAUTH_URL_CALLBACK`)
@@ -89,6 +89,13 @@ For each such request asfquart connects to LDAP as the user, which checks the pa
 looks up the projects that the user is a member or owner of. The lookup is cached in memory
 for an hour per user. The password is checked on every request, cached or not, so the cache
 saves the lookup but not the connection.
+
+The cache holds the lookups of at most 1,000 users (`asfquart.ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES`).
+Lookups that are more than an hour old are removed whenever somebody authenticates, and when
+the cache is full the lookup that has gone longest without being used makes way for the
+newest, so a user who keeps coming back keeps their place. A user whose lookup is gone is
+not refused: it is made again on their next request. Only a lookup that succeeded is cached,
+so the cache does not grow with attempts to log in.
 
 | What happens | Response to the user |
 |---|---|
