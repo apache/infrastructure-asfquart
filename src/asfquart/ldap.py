@@ -14,11 +14,10 @@ DEFAULT_LDAP_BASE = "uid=%s,ou=people,dc=apache,dc=org"
 DEFAULT_LDAP_GROUP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
 UID_RE = re.compile(r"^(?:uid=)?([^,]+)")
 GROUP_RE = re.compile(r"^(?:cn=)?([^,]+)")
-# The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
-# letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
-# apache/tooling-trusted-releases, except that AsfUid asks for three characters, and there are ASF
-# users whose id has two. None of these characters has a special meaning in a DN.
-VALID_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
+# The shape of an ASF user id. The rule is written once, as base.ASF_UID_RE, and is the same one
+# that generics.py applies to the OAuth provider's response. None of the characters that it allows
+# has a special meaning in a DN.
+VALID_UID_RE = base.ASF_UID_RE
 DEFAULT_MEMBER_ATTR = "member"
 DEFAULT_OWNER_ATTR = "owner"
 DEFAULT_LDAP_CACHE_TTL = 3600  # Cache LDAP lookups for one hour

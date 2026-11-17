@@ -6,7 +6,6 @@ import functools
 import hashlib
 import hmac
 import logging
-import re
 import secrets
 import ssl
 import unicodedata
@@ -44,11 +43,9 @@ STATE_COOKIE_SECURE = True
 # between reads, and 30 seconds for the exchange as a whole.
 OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, sock_read=15)
 
-# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider: lower case
-# letters, digits, hyphens and underscores, starting with a letter, and at least two characters.
-# This is the rule of AsfUid in atr/models/safe.py of apache/tooling-trusted-releases, except that
-# AsfUid asks for three characters, and there are ASF users whose id has two.
-OAUTH_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
+# The shape of an ASF user id, as returned in the "uid" field by the OAuth provider. The rule is
+# written once, as base.ASF_UID_RE, and is the same one that ldap.py applies to a username.
+OAUTH_UID_RE = asfquart.base.ASF_UID_RE
 
 # How many logins may be pending (started, and not yet completed or expired) at one time. Each
 # takes a few hundred bytes. When there are more, the oldest are dropped, and fail if completed.
