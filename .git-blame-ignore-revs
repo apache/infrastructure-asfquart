@@ -1,0 +1,5 @@
+# Commits for `git blame` to skip.
+# Use it locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Add ruff, and format the codebase with it (#82)
+bde851148ea51bf81610b1c6b253c5fa31bab836
