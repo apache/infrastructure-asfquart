@@ -17,6 +17,8 @@ GROUP_RE = re.compile(r"^(?:cn=)?([^,]+)")
 # The shape of an ASF user id. The rule is written once, as base.ASF_UID_RE, and is the same one
 # that generics.py applies to the OAuth provider's response. None of the characters that it allows
 # has a special meaning in a DN.
+# The checks on the username and password are listed, with every other input validation rule, in
+# docs/input-validation.md.
 VALID_UID_RE = base.ASF_UID_RE
 DEFAULT_MEMBER_ATTR = "member"
 DEFAULT_OWNER_ATTR = "owner"
