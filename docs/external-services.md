@@ -47,8 +47,9 @@ If it cannot be reached:
 
 ### Token endpoint (`OAUTH_URL_CALLBACK`)
 
-When the browser returns from the provider, asfquart makes one `GET` request to this endpoint
-to exchange the `code` for the user's details. The request is time limited: 10 seconds to
+When the browser returns from the provider, asfquart makes one `POST` request to this endpoint
+to exchange the `code` for the user's details, with the code in the form body rather than the
+URL. Redirects aren't followed. The request is time limited: 10 seconds to
 connect, 15 seconds between reads, and 30 seconds in total. It is not retried.
 
 | What happens | Response to the user |
@@ -122,10 +123,16 @@ import asfquart
 import asfquart.generics
 
 asfquart.generics.OAUTH_URL_INIT = "https://oauth.example.org/auth?state=%s&redirect_uri=%s"
-asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.example.org/token?code=%s"
+asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.example.org/token"
 
 app = asfquart.construct("myapp")
 ```
 
-`OAUTH_URL_INIT` takes the state and the callback URL, and `OAUTH_URL_CALLBACK` takes the
-code, each as a `%s`.
+`OAUTH_URL_INIT` takes the state and the callback URL, each as a `%s`. `OAUTH_URL_CALLBACK` is
+just the endpoint - the code is POSTed to it as a form field named `code`.
+
+Before 0.1.13 `OAUTH_URL_CALLBACK` took the code as a `%s`, and a lot of apps set it to the old
+default, `"https://oauth.apache.org/token-oidc?code=%s"`. That exact value is treated as the new
+default, so those apps get the `POST` and can drop the line. Any other value with a `%s` is
+still sent as a `GET`, with a warning logged once - remove the query string to switch to
+`POST`, if the endpoint accepts one.

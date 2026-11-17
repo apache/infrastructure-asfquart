@@ -79,8 +79,9 @@ which check failed:
 403 Invalid or expired OAuth state provided. OAuth workflows must be completed within 900 seconds.
 ```
 
-Once the rules pass, the `code` is exchanged with the OAuth provider. The `code` is
-percent-encoded before it is placed in the request to the provider. The exchange is time
+Once the rules pass, the `code` is exchanged with the OAuth provider, in the body of a `POST`
+(see [the external services page](external-services.md#token-endpoint-oauth_url_callback)).
+The exchange is time
 limited (`asfquart.generics.OAUTH_TIMEOUT`): 10 seconds to connect, 15 seconds between reads,
 and 30 seconds in total. The connection to the provider must use TLS 1.2 or later, and the
 provider's certificate must be valid and match its host name.
@@ -98,6 +99,9 @@ check its response failed. The log does not have the `code`, the `state`, or the
 
 After a successful exchange the browser is redirected to the recorded target (using a `Refresh`
 header rather than a 30x response, so that `SameSite` session cookies are kept).
+
+Any response to a URL on the OAuth endpoint with a `code` in it is sent with
+`Referrer-Policy: no-referrer`, so the code isn't passed on in a `Referer` header.
 
 ### Configuration
 

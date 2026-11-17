@@ -7,6 +7,8 @@ import ssl
 import urllib.parse
 
 import aiohttp
+import aiohttp.test_utils
+import aiohttp.web
 import pytest
 
 import asfquart
@@ -250,6 +252,8 @@ class _FakeProvider:
         self.data = data
         self.error = error
         self.urls = []
+        self.calls = []  # (method, url, form body)
+        self.post_kwargs = []
         self.timeouts = []
 
     def __call__(self, timeout=None, **kwargs):  # ClientSession(timeout=...)
@@ -262,11 +266,19 @@ class _FakeProvider:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url):
+    def _answer(self, method, url, data):
         self.urls.append(url)
+        self.calls.append((method, url, data))
         if self.error is not None:
             raise self.error
         return self
+
+    async def get(self, url):
+        return self._answer("GET", url, None)
+
+    async def post(self, url, data=None, **kwargs):
+        self.post_kwargs.append(kwargs)
+        return self._answer("POST", url, data)
 
     async def json(self):
         if isinstance(self.data, Exception):
@@ -311,18 +323,88 @@ async def test_callback_redirects_to_recorded_target(monkeypatch):
         assert resp.headers["Refresh"] == "0; url=/dashboard"
 
 
+AWKWARD_CODE = "a&client_id=evil#/x y?"
+
+# The default before #96, which many apps set themselves
+OLD_DEFAULT_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+# Some other endpoint that takes the code as a %s
+LEGACY_CALLBACK = "https://oauth.example.org/token?code=%s"
+
+
+@pytest.fixture
+def callback_url(monkeypatch):
+    """Sets OAUTH_URL_CALLBACK for a test, with the warned-once flag reset"""
+    def set_url(url):
+        monkeypatch.setattr(asfquart.generics, "OAUTH_URL_CALLBACK", url)
+    monkeypatch.setattr(asfquart.generics, "_warned_legacy_callback", False)
+    return set_url
+
+
 @pytest.mark.generics
-async def test_callback_quotes_code(monkeypatch):
-    """The code is percent-encoded, so it cannot add parameters to the exchange request."""
+@pytest.mark.parametrize("setting, posted_to", [
+    (None, "https://oauth.apache.org/token-oidc"),                  # the default
+    ("https://oauth.example.org/token", "https://oauth.example.org/token"),
+    (OLD_DEFAULT_CALLBACK, "https://oauth.apache.org/token-oidc"),  # upgraded to the new default
+])
+async def test_callback_posts_code_in_body(monkeypatch, caplog, callback_url, setting, posted_to):
+    """The code goes in a POST body, not the URL (#96)"""
+    if setting:
+        callback_url(setting)
     app = _make_app()
     provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
     async with app.test_app():
-        _client, resp = await _login_and_call_back(app, monkeypatch, provider, code="a&client_id=evil#/x y?")
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider, code=AWKWARD_CODE)
         assert resp.status_code == 200
-    assert len(provider.urls) == 1
-    query = urllib.parse.urlsplit(provider.urls[0]).query
-    assert query == "code=a%26client_id%3Devil%23%2Fx%20y%3F"
-    assert urllib.parse.parse_qs(query) == {"code": ["a&client_id=evil#/x y?"]}
+    assert provider.calls == [("POST", posted_to, {"code": AWKWARD_CODE})]
+    assert provider.post_kwargs == [{"allow_redirects": False}]
+    assert "OAUTH_URL_CALLBACK" not in caplog.text
+
+
+@pytest.mark.generics
+async def test_exchange_code_over_real_aiohttp(callback_url):
+    """Checks what actually goes over the wire - the fake provider only sees the arguments"""
+    seen = {}
+
+    async def token(request):
+        seen.update(method=request.method, query=request.query_string, form=dict(await request.post()))
+        return aiohttp.web.json_response(GOOD_OAUTH_DATA)
+
+    server_app = aiohttp.web.Application()
+    server_app.router.add_route("*", "/token", token)
+    async with aiohttp.test_utils.TestServer(server_app) as server:
+        callback_url(str(server.make_url("/token")))
+        async with aiohttp.ClientSession() as session:
+            rv = await asfquart.generics._exchange_code(session, AWKWARD_CODE)
+            assert rv.status == 200
+    assert seen == {"method": "POST", "query": "", "form": {"code": AWKWARD_CODE}}
+
+
+@pytest.mark.generics
+async def test_callback_redirect_is_a_failed_login(monkeypatch, caplog):
+    app = _make_app()
+    provider = _FakeProvider(status=302, data=None)
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider)
+        assert resp.status_code == 403
+    assert "OAuth code exchange failed: provider answered with status 302" in caplog.text
+
+
+@pytest.mark.generics
+async def test_callback_legacy_template_uses_get(monkeypatch, caplog, callback_url):
+    """Any other endpoint with a %s still gets a GET with the code quoted, and one warning"""
+    callback_url(LEGACY_CALLBACK)
+    app = _make_app()
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+    async with app.test_app():
+        for _ in range(2):
+            _client, resp = await _login_and_call_back(app, monkeypatch, provider, code=AWKWARD_CODE)
+            assert resp.status_code == 200
+    get = ("GET", "https://oauth.example.org/token?code=a%26client_id%3Devil%23%2Fx%20y%3F", None)
+    assert provider.calls == [get, get]
+    warnings = [r for r in caplog.records if r.name == "asfquart.generics" and r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert warnings[0].getMessage().startswith("OAUTH_URL_CALLBACK has a %s for the code,")
+    assert AWKWARD_CODE not in caplog.text
 
 
 @pytest.mark.generics
@@ -887,3 +969,58 @@ async def test_callback_host_set_after_setup_still_applies(monkeypatch, caplog):
     assert resp.status_code == 500
     assert "Location" not in resp.headers
     assert "callback host must be https://" in caplog.text
+
+
+# ---- Referrer-Policy on URLs with a code ----
+
+@pytest.mark.generics
+@pytest.mark.parametrize("login, provider_args, status", [
+    ("/auth?login", {"data": dict(GOOD_OAUTH_DATA)}, 200),               # logged in
+    ("/auth?login=/dashboard", {"data": dict(GOOD_OAUTH_DATA)}, 200),    # logged in, with a Refresh
+    ("/auth?login", {"status": 404, "data": None}, 403),                 # provider refused the code
+])
+async def test_callback_sends_no_referrer(monkeypatch, login, provider_args, status):
+    app = _make_app()
+    provider = _FakeProvider(**provider_args)
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider, login=login)
+        assert resp.status_code == status
+        assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method, url, headers, status", [
+    ("GET", "/auth?state=notpending&code=abc123", {}, 403),                              # bad state
+    ("GET", "/auth?code=abc123", {}, 404),                                               # no state
+    ("POST", "/auth?state=notpending&code=abc123", {"Sec-Fetch-Site": "cross-site"}, 403),  # CSRF check
+])
+async def test_refused_request_with_code_sends_no_referrer(method, url, headers, status):
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().open(url, method=method, scheme="https", headers=headers)
+        assert resp.status_code == status
+        assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+
+@pytest.mark.generics
+async def test_callback_error_sends_no_referrer(monkeypatch):
+    """Even a 500 has the header"""
+    async def broken(_data):
+        raise RuntimeError("could not write the session")
+    monkeypatch.setattr(asfquart.session, "awrite", broken)
+    app = _make_app()
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+    async with app.test_app():
+        _client, resp = await _login_and_call_back(app, monkeypatch, provider)
+        assert resp.status_code == 500
+        assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("url", ["/auth", "/auth?login", "/auth?logout"])
+async def test_no_referrer_policy_without_a_code(url):
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().get(url, scheme="https")
+        assert "Referrer-Policy" not in resp.headers
