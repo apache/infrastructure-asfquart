@@ -1,13 +1,12 @@
 [project]
 name = "asfquart"
 version = "0.1.13"
-requires-python = ">=3.10,<4"
+requires-python = ">=3.11,<4"
 authors = [{ name = "ASF Infrastructure", email = "users@infra.apache.org" }]
 license = "Apache-2.0"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -26,7 +25,6 @@ dependencies = [
     "ezt>=1.1,<2",
     "asfpy>=0.56,<1",
     "easydict>=1.13,<2",
-    "exceptiongroup>=1.1.0; python_version<'3.11'",
     "watchfiles>=1.0.0,<2",
 ]
 
