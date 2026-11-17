@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Miscellaneous helpers for ASFQuart"""
 
-import os.path
-import io
-import functools
 import asyncio
+import functools
+import io
 import logging
+import os.path
 
 import quart
 import werkzeug.exceptions
@@ -109,7 +109,7 @@ async def formdata():
                 raise _form_too_large(max_size)
         else:
             await _receive_form_body(max_size)
-    xform = await quart.request.form                # POST form data
+    xform = await quart.request.form  # POST form data
     if xform:
         form_data.update(xform.to_dict())
     if quart.request.is_json:  # JSON data from a PUT?
@@ -129,8 +129,8 @@ class FilenameConverter(werkzeug.routing.BaseConverter):
     regex = r"^[^/.]*(\.[A-Za-z0-9]+)?$"
     part_isolating = False
 
-    def to_python(self, filename): # pylint: disable=arguments-renamed
-        return os.path.splitext(filename) # superclass function uses 'value'
+    def to_python(self, filename):  # pylint: disable=arguments-renamed
+        return os.path.splitext(filename)  # superclass function uses 'value'
 
 
 #
@@ -201,7 +201,7 @@ class CancellableTask:
             try:
                 await coro
             except asyncio.CancelledError:
-                LOGGER.debug(f'TASK CANCELLED: {self.task}')
+                LOGGER.debug(f"TASK CANCELLED: {self.task}")
 
         self.task = loop.create_task(absorb_cancel(), name=name)
 

@@ -9,28 +9,27 @@ import pytest
 import asfquart
 import asfquart.ldap
 
-
 INVALID_USERNAMES = [
     "",
-    "a",                                    # too short
-    "4user",                                # must start with a letter
+    "a",  # too short
+    "4user",  # must start with a letter
     "-user",
     "_user",
-    "TestUser",                             # upper case
+    "TestUser",  # upper case
     "test user",
     "test.user",
     "testuser,ou=people,dc=apache,dc=org",  # would add components to the DN
     "testuser,ou=project",
     "uid=testuser",
-    "testuser+cn=admin",                    # multi-valued RDN
-    "*",                                    # LDAP filter characters
+    "testuser+cn=admin",  # multi-valued RDN
+    "*",  # LDAP filter characters
     "test*",
     "test)(uid=*",
-    "test\\2Cuser",                         # DN escape
+    "test\\2Cuser",  # DN escape
     "testuser\n",
     "testuser\x00",
     "testéuser",
-    "ｔｅｓｔ",             # full width letters
+    "ｔｅｓｔ",  # full width letters
 ]
 
 VALID_USERNAMES = ["testuser", "abc", "ab", "a1", "test-user", "test_user", "user42", "t" * 100]
@@ -130,6 +129,7 @@ async def test_basic_auth_with_empty_password(monkeypatch, ldap_clients):
 
 # ---- The cache of LDAP lookups: expired ones are removed, and there is a limit to how many are kept ----
 
+
 class _Clock:
     """Stands in for the time module inside asfquart.ldap"""
 
@@ -147,7 +147,7 @@ class _FakeDirectory:
         self.binds = []
         self.searches = []
 
-    def LDAPClient(self, uri, dn, password):
+    def LDAPClient(self, uri, dn, password):  # noqa: N802 - stands in for bonsai.LDAPClient
         directory = self
 
         class Connection:
@@ -172,8 +172,10 @@ def directory(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=fake), raising=False)
     monkeypatch.setattr(
-        asfquart.ldap, "bonsai",
-        types.SimpleNamespace(errors=types.SimpleNamespace(AuthenticationError=PermissionError)), raising=False,
+        asfquart.ldap,
+        "bonsai",
+        types.SimpleNamespace(errors=types.SimpleNamespace(AuthenticationError=PermissionError)),
+        raising=False,
     )
     monkeypatch.setattr(asfquart.ldap, "time", clock)
     monkeypatch.setattr(asfquart.ldap, "LDAP_CACHE", {})
@@ -205,7 +207,7 @@ async def test_expired_ldap_lookups_are_removed(directory):
         await _lookup(username)
         directory.clock.now += 60
     assert list(asfquart.ldap.LDAP_CACHE) == ["alice", "bob", "carol"]
-    directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL - 100   # alice and bob have expired, carol has not
+    directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL - 100  # alice and bob have expired, carol has not
     await _lookup("dave")
     assert list(asfquart.ldap.LDAP_CACHE) == ["carol", "dave"]
     directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL + 1
@@ -238,16 +240,17 @@ async def test_renewed_ldap_lookup_counts_as_the_newest(directory, monkeypatch):
     directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL - 10
     await _lookup("bob")
     await _lookup("carol")
-    directory.clock.now += 20            # alice has expired; she comes back, and is looked up again
+    directory.clock.now += 20  # alice has expired; she comes back, and is looked up again
     await _lookup("alice")
     assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "carol", "alice"]
-    await _lookup("dave")                # the cache is full: bob is now the oldest, not alice
+    await _lookup("dave")  # the cache is full: bob is now the oldest, not alice
     assert list(asfquart.ldap.LDAP_CACHE) == ["carol", "alice", "dave"]
 
 
 @pytest.mark.auth
 async def test_failed_ldap_lookup_is_not_cached(directory, monkeypatch):
     """Only a lookup that succeeded is cached, so the cache cannot be filled by guessing usernames."""
+
     def refuse(uri, dn, password):
         class Connection:
             async def __aenter__(self):
@@ -255,6 +258,7 @@ async def test_failed_ldap_lookup_is_not_cached(directory, monkeypatch):
 
             async def __aexit__(self, *exc):
                 return False
+
         return types.SimpleNamespace(connect=Connection)
 
     monkeypatch.setattr(directory, "LDAPClient", refuse)
@@ -270,8 +274,9 @@ async def test_cached_user_is_not_failed_by_an_eviction_during_the_password_chec
     """While a cached user's password is being checked, another request can push their lookup out of
     the cache. The first request already has the lookup, and must answer with it, not with a 500."""
     import asyncio
+
     monkeypatch.setattr(asfquart.ldap, "DEFAULT_LDAP_CACHE_MAX_ENTRIES", 1)
-    await _lookup("alice")                                   # alice is cached
+    await _lookup("alice")  # alice is cached
     hold = asyncio.Event()
     waiting = asyncio.Event()
     plain_client = directory.LDAPClient
@@ -285,15 +290,15 @@ async def test_cached_user_is_not_failed_by_an_eviction_during_the_password_chec
         class HeldOpen(connection):
             async def __aenter__(self):
                 waiting.set()
-                await hold.wait()                            # the bind does not come back yet
+                await hold.wait()  # the bind does not come back yet
                 return await super().__aenter__()
 
         return types.SimpleNamespace(connect=HeldOpen)
 
     monkeypatch.setattr(directory, "LDAPClient", slow_for_alice)
-    alice = asyncio.ensure_future(_lookup("alice"))          # cache hit; now checking the password
+    alice = asyncio.ensure_future(_lookup("alice"))  # cache hit; now checking the password
     await waiting.wait()
-    await _lookup("bob")                                     # the cache holds one: alice goes
+    await _lookup("bob")  # the cache holds one: alice goes
     assert "alice" not in asfquart.ldap.LDAP_CACHE
     hold.set()
     assert await alice == {"member": ["testproject"], "owner": []}
@@ -307,13 +312,13 @@ async def test_ldap_cache_drops_the_least_recently_used(directory, monkeypatch):
     for username in ("alice", "bob", "carol"):
         await _lookup(username)
         directory.clock.now += 1
-    await _lookup("alice")                                   # alice is back: a cache hit, and a use
+    await _lookup("alice")  # alice is back: a cache hit, and a use
     assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "carol", "alice"]
     searches = len(directory.searches)
-    await _lookup("dave")                                    # the cache is full: bob goes, not alice
+    await _lookup("dave")  # the cache is full: bob goes, not alice
     assert list(asfquart.ldap.LDAP_CACHE) == ["carol", "alice", "dave"]
     await _lookup("alice")
-    assert len(directory.searches) == searches + 1           # only dave was looked up; alice was still cached
+    assert len(directory.searches) == searches + 1  # only dave was looked up; alice was still cached
 
 
 @pytest.mark.auth
@@ -322,10 +327,10 @@ async def test_using_a_lookup_does_not_make_it_last_longer(directory):
     await _lookup("alice")
     for _ in range(5):
         directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL / 6
-        await _lookup("alice")                               # used every ten minutes
+        await _lookup("alice")  # used every ten minutes
     assert len(directory.searches) == 1
     directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL / 6 + 1
-    await _lookup("alice")                                   # an hour after the lookup: made again
+    await _lookup("alice")  # an hour after the lookup: made again
     assert len(directory.searches) == 2
 
 
@@ -336,9 +341,9 @@ async def test_expired_lookup_is_removed_wherever_it_is_in_the_order(directory):
     directory.clock.now += 1800
     await _lookup("bob")
     directory.clock.now += 1000
-    await _lookup("alice")                                   # used: alice is now behind bob in the order
+    await _lookup("alice")  # used: alice is now behind bob in the order
     assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "alice"]
-    directory.clock.now += 900                               # alice's lookup is 3700 seconds old, bob's 1900
+    directory.clock.now += 900  # alice's lookup is 3700 seconds old, bob's 1900
     await _lookup("carol")
     assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "carol"]
 
@@ -380,7 +385,7 @@ BASIC_CREDENTIALS = "Basic " + base64.b64encode(b"testuser:password").decode()
 @pytest.mark.parametrize("kwargs", [{}, {"basic_auth": False}])
 @pytest.mark.parametrize("ldap_supported", [True, False])
 async def test_basic_auth_is_off_by_default(monkeypatch, ldap_clients, kwargs, ldap_supported):
-    """Without basic_auth=True a Basic header is a 401, whether or not the LDAP libraries are there, and LDAP is not contacted"""
+    """Without basic_auth=True a Basic header is a 401, with or without the LDAP libraries, and LDAP is not contacted"""
     monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", ldap_supported)
     app = asfquart.construct("ldap_basic_off", token_file=None, **kwargs)
     assert app.basic_auth is False

@@ -34,8 +34,10 @@ def _make_app():
         # for instance, the endpoint shows the session of a user who is logged in already.
         is_callback = (
             request.path == "/auth"
-            and args.get("code") and args.get("state")
-            and not args.get("login") and not args.get("logout")
+            and args.get("code")
+            and args.get("state")
+            and not args.get("login")
+            and not args.get("logout")
         )
         if is_callback:
             # The callback answers 200 only when it has created the session. Read it back all the
@@ -46,6 +48,7 @@ def _make_app():
             else:
                 log.warning("login failed: status=%s remote=%s", response.status_code, request.remote_addr)
         return response
+
     # ---- End of the hook ----
 
     return app
@@ -156,6 +159,7 @@ async def test_other_auth_requests_are_not_logged(caplog):
 
 # ---- Requests that look like the callback, but are not a login ----
 
+
 async def _logged_in_client(app, monkeypatch, caplog):
     """A client that has completed a login; the log is emptied afterwards"""
     monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", _FakeProvider(data={"uid": "testuser"}))
@@ -168,12 +172,15 @@ async def _logged_in_client(app, monkeypatch, caplog):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("query", [
-    "code=&state=",             # both present, both empty
-    "code=x&state=",
-    "code=&state=x",
-    "code&state",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "code=&state=",  # both present, both empty
+        "code=x&state=",
+        "code=&state=x",
+        "code&state",
+    ],
+)
 async def test_session_display_is_not_logged_as_a_login(monkeypatch, caplog, query):
     """With an empty code or state, /auth shows the session of a user who is logged in already.
     That answers 200, and must not be recorded as a login."""
@@ -199,11 +206,14 @@ async def test_session_display_without_a_session_is_not_logged(caplog):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("query, status", [
-    ("login=/dashboard&code=x&state=y", 302),   # starts a login, whatever else is in the query
-    ("logout=/goodbye&code=x&state=y", 302),    # logs out
-    ("login=https://example.org&code=x&state=y", 400),
-])
+@pytest.mark.parametrize(
+    "query, status",
+    [
+        ("login=/dashboard&code=x&state=y", 302),  # starts a login, whatever else is in the query
+        ("logout=/goodbye&code=x&state=y", 302),  # logs out
+        ("login=https://example.org&code=x&state=y", 400),
+    ],
+)
 async def test_login_and_logout_with_a_code_are_not_logged(monkeypatch, caplog, query, status):
     """A login or logout request is not the callback, even with a code and a state added to it."""
     caplog.set_level(logging.INFO, logger="myapp.audit")
@@ -389,7 +399,7 @@ async def test_store_login_without_a_uid_does_not_leave_a_session_behind(caplog)
     app = _make_store_app()
     async with app.test_request_context("/"):
         await asfquart.session.awrite({"fullname": "No uid"})
-        assert isinstance(quart.session[app.app_id].get("sid"), str)   # the cookie leads to the session
+        assert isinstance(quart.session[app.app_id].get("sid"), str)  # the cookie leads to the session
     assert len(app.sessions._sessions) == 1
     (record,) = _audit(caplog)
     assert "login succeeded: uid=None" in record.getMessage()
@@ -439,6 +449,7 @@ async def test_areplace_needs_replace_or_register(monkeypatch):
 
 # ---- The method of the callback, and more than one app ----
 
+
 @pytest.mark.generics
 async def test_callback_by_post_is_a_login_and_is_logged(monkeypatch, caplog):
     """The OAuth endpoint takes the callback by POST as well as by GET. A login that is completed
@@ -452,7 +463,7 @@ async def test_callback_by_post_is_a_login_and_is_logged(monkeypatch, caplog):
         resp = await client.post(f"/auth?state={state}&code=sekrit", scheme="https")
         assert resp.status_code == 200
         session = await client.get("/auth", scheme="https")
-        assert (await session.get_json())["uid"] == "testuser"       # the POST did log the user in
+        assert (await session.get_json())["uid"] == "testuser"  # the POST did log the user in
     (record,) = _audit(caplog)
     assert "login succeeded: uid=testuser" in record.getMessage()
 
@@ -464,7 +475,8 @@ async def test_refused_post_callback_is_logged_as_a_failure(caplog):
     app = _make_app()
     async with app.test_app():
         resp = await app.test_client().post(
-            "/auth?state=made-up&code=sekrit", scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+            "/auth?state=made-up&code=sekrit", scheme="https", headers={"Sec-Fetch-Site": "cross-site"}
+        )
         assert resp.status_code == 403
     (record,) = _audit(caplog)
     assert "login failed: status=403" in record.getMessage()
@@ -480,7 +492,7 @@ async def test_hook_finds_the_session_where_the_endpoint_put_it(monkeypatch, cap
     monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", _FakeProvider(data={"uid": "testuser"}))
     app = _make_app()
     other = asfquart.construct(f"test_oauth_logging_other_{next(_counter)}", token_file=None)
-    assert asfquart.APP is other and other is not app      # the endpoint and the hook both look here
+    assert asfquart.APP is other and other is not app  # the endpoint and the hook both look here
     async with app.test_app():
         client = app.test_client()
         state = await _start_login(client)

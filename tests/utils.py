@@ -110,14 +110,17 @@ async def test_formdata_reads_a_form(declare_length):
 
 @pytest.mark.utils
 @pytest.mark.parametrize("declare_length", [True, False])
-@pytest.mark.parametrize("content_type", [
-    FORM,
-    MULTIPART,
-    "application/x-url-encoded",
-    "application/x-www-form-urlencoded; charset=utf-8",
-    "Application/X-WWW-Form-Urlencoded",   # the type is not case sensitive, and quart parses this as a form
-    "MULTIPART/FORM-DATA; boundary=xyz",
-])
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        FORM,
+        MULTIPART,
+        "application/x-url-encoded",
+        "application/x-www-form-urlencoded; charset=utf-8",
+        "Application/X-WWW-Form-Urlencoded",  # the type is not case sensitive, and quart parses this as a form
+        "MULTIPART/FORM-DATA; boundary=xyz",
+    ],
+)
 async def test_formdata_rejects_large_form(content_type, declare_length):
     """A form over the limit is a 413, however its content type is written."""
     app = _form_app(MAX_FORM_CONTENT_LENGTH=1000)
@@ -147,6 +150,7 @@ async def test_formdata_raises_for_the_caller():
 
 # ---- formdata(): a form that declares its length is refused without reading its body ----
 
+
 async def _stream_form(app, pieces, headers=None, complete=False):
     """Sends a form to the app piece by piece, as a slow client would, and returns the response.
     Unless complete is set, the client never says that it has finished sending."""
@@ -174,6 +178,7 @@ async def test_formdata_declared_length_is_refused_without_the_body():
 
 
 # ---- formdata(): a form that does not declare its length is counted as it arrives ----
+
 
 @pytest.mark.utils
 async def test_formdata_undeclared_length_is_refused_at_the_limit():
@@ -205,13 +210,15 @@ async def test_formdata_undeclared_length_times_out():
 async def test_formdata_leaves_the_request_usable(declare_length):
     """After formdata(), the endpoint can still read the files of a multipart form."""
     app = _form_app()
-    resp = await _post_form(app, MULTIPART_BODY, content_type=MULTIPART, declare_length=declare_length,
-                            path="/form?files=1")
+    resp = await _post_form(
+        app, MULTIPART_BODY, content_type=MULTIPART, declare_length=declare_length, path="/form?files=1"
+    )
     assert resp.status_code == 200
     assert await resp.get_json() == {"a": 5, "files": {"upload": len("file contents")}}
 
 
 # ---- formdata(): forms have a limit of their own, MAX_FORM_CONTENT_LENGTH ----
+
 
 @pytest.mark.utils
 @pytest.mark.parametrize("declare_length", [True, False])
@@ -289,13 +296,15 @@ async def test_formdata_form_limit_that_is_not_a_number():
 async def test_formdata_form_limit_does_not_apply_to_json():
     """The form limit is for forms: other bodies are limited by MAX_CONTENT_LENGTH alone."""
     app = _form_app(MAX_FORM_CONTENT_LENGTH=50)
-    resp = await _post_form(app, '{"a": "' + "x" * 5000 + '", "n": 5}', content_type="application/json",
-                            path="/form?q=zzz")
+    resp = await _post_form(
+        app, '{"a": "' + "x" * 5000 + '", "n": 5}', content_type="application/json", path="/form?q=zzz"
+    )
     assert resp.status_code == 200
     assert await resp.get_json() == {"a": 5000, "n": 5, "q": 3}
 
 
 # ---- JSON bodies ----
+
 
 def _json_app():
     app = quart.Quart(f"test_formdata_{next(_form_counter)}")
@@ -314,7 +323,9 @@ async def _send_json(app, body, method="POST", path="/data"):
 @pytest.mark.utils
 @pytest.mark.parametrize("method", ["POST", "PUT"])
 async def test_formdata_reads_a_json_object(method):
-    resp = await _send_json(_json_app(), b'{"a": [1, 2], "b": null, "q": "body"}', method=method, path="/data?q=query&r=1")
+    resp = await _send_json(
+        _json_app(), b'{"a": [1, 2], "b": null, "q": "body"}', method=method, path="/data?q=query&r=1"
+    )
     assert resp.status_code == 200
     assert await resp.get_json() == {"a": [1, 2], "b": None, "q": "body", "r": "1"}
 
@@ -327,7 +338,9 @@ async def test_formdata_reads_an_empty_json_object():
 
 
 @pytest.mark.utils
-@pytest.mark.parametrize("body", [b"[1, 2]", b"[]", b'[["a", 1]]', b'["ab"]', b'"text"', b"5", b"0", b"1.5", b"true", b"false", b"null"])
+@pytest.mark.parametrize(
+    "body", [b"[1, 2]", b"[]", b'[["a", 1]]', b'["ab"]', b'"text"', b"5", b"0", b"1.5", b"true", b"false", b"null"]
+)
 async def test_formdata_refuses_json_that_is_not_an_object(body):
     """A list, a string, a number, a boolean or null is a 400, as a body that is not JSON is. It was a 500,
     or for some values (a list of pairs) was taken to be fields."""

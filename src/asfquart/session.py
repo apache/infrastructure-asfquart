@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 """ASFQuart - User session methods and decorators"""
 
-from . import base, ldap
-import hashlib
-import secrets
-import time
 import binascii
+import hashlib
 import inspect
 import logging
+import secrets
+import time
 import typing
 
 import quart
+
 import asfquart
+
+from . import base, ldap
 
 LOGGER = logging.getLogger(__name__)
 
 # The time limits for a session that is kept in the cookie, in seconds. An app sets its own with
 # the MAX_SESSION_AGE and MAX_SESSION_IDLE options in its config.yaml; 0 means no limit.
-DEFAULT_MAX_SESSION_AGE = 86400 * 7   # A session ends 7 days after the user logged in, however much it is used
+DEFAULT_MAX_SESSION_AGE = 86400 * 7  # A session ends 7 days after the user logged in, however much it is used
 # ... and earlier, once it has not been used for this long. An idle limit only has an effect when
 # it is less than the maximum age, so with these defaults it has none until an app lowers it.
 DEFAULT_MAX_SESSION_IDLE = 86400 * 7
@@ -108,21 +110,22 @@ class SessionProtocol(typing.Protocol):
     for each requirement the app uses. Type checkers can check a session class against this.
     """
 
-    # Properties, as these are only ever read - a class can then use a narrower type, e.g. list[str]
+    # Properties, as these are only ever read - a class can then use a narrower type, e.g. list[str].
+    # The names are ClientSession's, hence the N802s.
     @property
     def uid(self) -> str | None: ...  # None only if the session was built from data with no uid
 
     @property
-    def isMember(self) -> bool: ...  # Requirements.member
+    def isMember(self) -> bool: ...  # noqa: N802 - Requirements.member
 
     @property
-    def isChair(self) -> bool: ...  # Requirements.chair
+    def isChair(self) -> bool: ...  # noqa: N802 - Requirements.chair
 
     @property
-    def isRoot(self) -> bool: ...  # Requirements.root
+    def isRoot(self) -> bool: ...  # noqa: N802 - Requirements.root
 
     @property
-    def isRole(self) -> bool: ...  # Requirements.roleacct
+    def isRole(self) -> bool: ...  # noqa: N802 - Requirements.roleacct
 
     @property
     def mfa(self) -> bool: ...  # Requirements.mfa_protected
@@ -152,7 +155,7 @@ class ClientSession(dict):
         self.update(self.__dict__.items())
 
 
-async def read(expiry_time=None, app=None):
+async def read(expiry_time=None, app=None):  # noqa: C901
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session.
 
@@ -196,7 +199,9 @@ async def read(expiry_time=None, app=None):
                 # cookie is not sent again for every request: once a minute is often enough to keep
                 # an idle limit of days, and a shorter limit is kept to within a tenth of itself.
                 idle_limit = _idle_limit(app, expiry_time)
-                refresh_interval = min(SESSION_REFRESH_INTERVAL, idle_limit / 10) if idle_limit > 0 else SESSION_REFRESH_INTERVAL
+                refresh_interval = SESSION_REFRESH_INTERVAL
+                if idle_limit > 0:
+                    refresh_interval = min(SESSION_REFRESH_INTERVAL, idle_limit / 10)
                 if (_timestamp(session_dict, "uts") or 0) <= now - refresh_interval:
                     session_dict["uts"] = now
                     _mark_session_changed()
@@ -204,7 +209,7 @@ async def read(expiry_time=None, app=None):
     # Check for session providers in Auth header. These sessions are created ad-hoc, and do not linger in the
     # quart session DB. Since quart.request is not defined inside testing frameworks, the bool(request) test
     # asks the werkzeug LocalProxy wrapper whether a request exists or not, and bails if not.
-    elif bool(quart.request) and 'Authorization' in quart.request.headers and quart.request.authorization:
+    elif bool(quart.request) and "Authorization" in quart.request.headers and quart.request.authorization:
         match quart.request.authorization.type:
             case "bearer":  # Role accounts, PATs - TBD
                 if app.token_handler:
@@ -248,7 +253,7 @@ async def read(expiry_time=None, app=None):
                     # binascii/ValueError == bad base64 auth string
                     # KeyError = missing username or password
                     raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400) from e
-            case _: # for match, this is the default
+            case _:  # for match, this is the default
                 raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
 
@@ -269,7 +274,7 @@ def write(session_data: dict, app=None, new_session: bool = False):
     now = time.time()
     dict_copy = session_data.copy()  # Copy dict so we don't mess with the original data
     dict_copy["cts"] = _created_at(app, session_data, now, new_session)  # Created at, for session length checks later
-    dict_copy["uts"] = now           # Set last access timestamp for expiry checks later
+    dict_copy["uts"] = now  # Set last access timestamp for expiry checks later
     quart.session[cookie_id] = dict_copy
 
 

@@ -9,9 +9,9 @@ and sessions can be accessed and modified as needed:
 ```python
 @asfquart.auth.require  # Implicitly require a valid (non-empty) session
 async def endpoint_with_session():
-   session = await asfquart.session.read()  # Read user session dict
-   session["foobar"] = 42
-   asfquart.session.write(session)  # Store our changes in the user session
+    session = await asfquart.session.read()  # Read user session dict
+    session["foobar"] = 42
+    asfquart.session.write(session)  # Store our changes in the user session
 ```
 
 ## Session timeouts
@@ -51,7 +51,8 @@ the `expiry_time` argument to `read()`. An endpoint that needs a recently used s
 for one:
 
 ```python
-session = await asfquart.session.read(expiry_time=24*3600)  # Require a session that has been accessed in the past 24 hours.
+# Require a session that has been accessed in the past 24 hours.
+session = await asfquart.session.read(expiry_time=24 * 3600)
 assert session, "No session found or session expired"  # If too old or not found, read() returns None
 ```
 
@@ -132,15 +133,17 @@ is declared:
 
 ```python
 async def token_handler(token):
-   if token == "abcdefg":
-      return {
-         "uid": "roleaccountthing",
-         "roleaccount": True,  # For role accounts, this MUST be set to True, to distinguish from normal user PATs
-         "committees": ["httpd", "tomcat",],  # random restriction in this example
-         "metadata": {  # the optional metadata dict can be used to manage/log whatever internal information you wish
-             "scope": ["scopeA", "scopeB"],  # For instance, you can log which scopes this token can be used within
-         },
-      }
+    if token == "abcdefg":
+        return {
+            "uid": "roleaccountthing",
+            "roleaccount": True,  # For role accounts, this MUST be set to True, to distinguish from normal user PATs
+            "committees": ["httpd", "tomcat"],  # random restriction in this example
+            "metadata": {  # the optional metadata dict can be used to manage/log whatever internal information you wish
+                "scope": ["scopeA", "scopeB"],  # For instance, you can log which scopes this token can be used within
+            },
+        }
+
+
 asfquart.APP.token_handler = token_handler
 ```
 
@@ -158,6 +161,7 @@ the usual `session = await asfquart.session.read()` call. Thus, you can test you
 
 ```python
 REQUIRED_SCOPE = "admin"  # some random scope required for this endpoint
+
 
 @app.route("/foo")
 @asfquart.auth.require  # Require a valid session, can be through a PAT

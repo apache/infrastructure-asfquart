@@ -202,7 +202,7 @@ class MemoryStore:
 
     def __init__(self, max_idle=86400, max_age=7 * 86400):
         self.max_idle = max_idle  # seconds a session may go unused
-        self.max_age = max_age    # seconds a session may last, used or not
+        self.max_age = max_age  # seconds a session may last, used or not
         # hsid -> [time created, time last used, data, session]. A session made by create()
         # has its data, and one made by replace() has the session object it was given.
         self._sessions = {}

@@ -10,6 +10,7 @@ import asfquart.utils
 
 APP = asfquart.APP
 
+
 @APP.route("/submit", methods=["POST"])
 async def submit():
     data = await asfquart.utils.formdata()

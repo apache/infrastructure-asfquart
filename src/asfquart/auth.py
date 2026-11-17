@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """ASFQuart - Authentication methods and decorators"""
-from . import base, session
-import functools
-import typing
+
 import collections.abc
+import functools
 import inspect
+import typing
 import warnings
+
+from . import base, session
+
 
 class Requirements:
     """Various pre-defined access requirements.
@@ -21,7 +24,6 @@ class Requirements:
     E_NOT_ROOT = "This endpoint is only accessible to foundation staff."
     E_NOT_PMC = "This endpoint is only accessible to members of the foundation committees."
     E_NOT_ROLEACCOUNT = "This endpoint is only accessible to role accounts."
-
 
     @classmethod
     def mfa_protected(cls, client_session: session.SessionProtocol):
@@ -67,6 +69,7 @@ class Requirements:
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
         return client_session.isRole is True, cls.E_NOT_ROLEACCOUNT
+
 
 class AuthenticationFailed(base.ASFQuartException):
     def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
@@ -153,9 +156,9 @@ async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of:
 
 
 def require(
-    func_or_requirements: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
-    all_of: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
-    any_of: typing.Union[typing.Callable, typing.Iterable[typing.Callable], None] = None,
+    func_or_requirements: typing.Callable | typing.Iterable[typing.Callable] | None = None,
+    all_of: typing.Callable | typing.Iterable[typing.Callable] | None = None,
+    any_of: typing.Callable | typing.Iterable[typing.Callable] | None = None,
 ):
     """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
     of requirements. By default, all requirements must be satisfied, though this can be made optional by
@@ -180,7 +183,7 @@ def require(
         @require(Requirements.member)  # Require session, require ASF member
         @require  # Require any authed session
         @require()  # The same: require any authed session
-        @require({Requirements.mfa_protected, Requirements.chair})  # Require any project chair with an MFA-protected session
+        @require({Requirements.mfa_protected, Requirements.chair})  # Any project chair with an MFA-protected session
         @require(all_of=Requirements.mfa_protected, any_of={Requirements.member, Requirements.chair})
           # Require either ASF member OR project chair, but also require an MFA-protected session in any case.
         @require(Requirements.mfa_protected, any_of={Requirements.member, Requirements.chair})
@@ -192,9 +195,7 @@ def require(
     if inspect.iscoroutinefunction(func_or_requirements):
         if all_of is not None or any_of is not None:
             raise TypeError("Requirements must be given as @require(...), placed above the endpoint.")
-        return functools.wraps(func_or_requirements)(
-            functools.partial(_require_wrapper, func_or_requirements, [], [])
-        )
+        return functools.wraps(func_or_requirements)(functools.partial(_require_wrapper, func_or_requirements, [], []))
 
     # Otherwise the first argument, if there is one, holds requirements. They must all be met, as must
     # those given with all_of: neither replaces the other. The requirements are checked here, so that

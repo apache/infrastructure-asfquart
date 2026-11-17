@@ -15,7 +15,6 @@ import quart
 import asfquart
 import asfquart.generics
 
-
 # Counter for unique app names to avoid duplicate route registration
 _counter = itertools.count()
 
@@ -31,6 +30,7 @@ def _make_app():
 
 
 # ---- Endpoint integration tests ----
+
 
 @pytest.mark.generics
 async def test_login_with_valid_redirect():
@@ -169,23 +169,23 @@ async def test_no_session_returns_404():
 # ---- Redirect targets that a browser would take off-site, or that would split a header ----
 
 UNSAFE_REDIRECTS = [
-    "/%5Cevil.com",       # /\evil.com: browsers read the backslash as a forward slash
-    "/%5C%5Cevil.com",    # /\\evil.com
-    "/foo%5Cbar",         # a backslash anywhere in the target
-    "/%09/evil.com",      # browsers drop tabs from a URL, leaving //evil.com
+    "/%5Cevil.com",  # /\evil.com: browsers read the backslash as a forward slash
+    "/%5C%5Cevil.com",  # /\\evil.com
+    "/foo%5Cbar",  # a backslash anywhere in the target
+    "/%09/evil.com",  # browsers drop tabs from a URL, leaving //evil.com
     "/foo%0D%0ASet-Cookie:%20a=b",  # CRLF
-    "/foo%0Abar",         # bare LF
-    "/foo%00bar",         # NUL
-    "/foo%7Fbar",         # DEL
-    "/foo%C2%85bar",      # U+0085 NEXT LINE, a C1 control
-    "/foo%C2%9Fbar",      # U+009F, the last C1 control
-    "/foo%E2%80%8Bbar",   # U+200B ZERO WIDTH SPACE, a format character
-    "/foo%E2%80%AEbar",   # U+202E RIGHT-TO-LEFT OVERRIDE, a format character
-    "/foo%EF%BB%BFbar",   # U+FEFF BYTE ORDER MARK, a format character
-    "/foo%EE%80%80bar",   # U+E000, private use
-    "/foo%EF%BF%BFbar",   # U+FFFF, unassigned
-    "/foo%E2%80%A8bar",   # U+2028 LINE SEPARATOR
-    "/foo%E2%80%A9bar",   # U+2029 PARAGRAPH SEPARATOR
+    "/foo%0Abar",  # bare LF
+    "/foo%00bar",  # NUL
+    "/foo%7Fbar",  # DEL
+    "/foo%C2%85bar",  # U+0085 NEXT LINE, a C1 control
+    "/foo%C2%9Fbar",  # U+009F, the last C1 control
+    "/foo%E2%80%8Bbar",  # U+200B ZERO WIDTH SPACE, a format character
+    "/foo%E2%80%AEbar",  # U+202E RIGHT-TO-LEFT OVERRIDE, a format character
+    "/foo%EF%BB%BFbar",  # U+FEFF BYTE ORDER MARK, a format character
+    "/foo%EE%80%80bar",  # U+E000, private use
+    "/foo%EF%BF%BFbar",  # U+FFFF, unassigned
+    "/foo%E2%80%A8bar",  # U+2028 LINE SEPARATOR
+    "/foo%E2%80%A9bar",  # U+2029 PARAGRAPH SEPARATOR
 ]
 
 
@@ -203,16 +203,19 @@ async def test_login_rejects_unsafe_redirect(target):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("target", [
-    "/auth",
-    "/auth?logout",
-    "/auth?logout=/",
-    "/auth#x",
-    "/x/../auth?logout",
-    "/./auth?logout",
-    "/%61uth?logout",
-    "/x/%2e%2e/auth?logout",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/auth",
+        "/auth?logout",
+        "/auth?logout=/",
+        "/auth#x",
+        "/x/../auth?logout",
+        "/./auth?logout",
+        "/%61uth?logout",
+        "/x/%2e%2e/auth?logout",
+    ],
+)
 async def test_login_rejects_the_oauth_endpoint_as_target(target):
     """The target is gone to from the app's own page, so /auth?logout would pass as a logout the app asked for"""
     app = _make_app()
@@ -249,12 +252,15 @@ async def test_login_accepts_path_with_query():
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("target", [
-    "/caf%C3%A9",                # e with an acute accent
-    "/%E6%97%A5%E6%9C%AC",       # CJK
-    "/foo%C2%A0bar",             # U+00A0 NO-BREAK SPACE: a separator, but not one that ends a line
-    "/foo%20bar",                # a plain space
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/caf%C3%A9",  # e with an acute accent
+        "/%E6%97%A5%E6%9C%AC",  # CJK
+        "/foo%C2%A0bar",  # U+00A0 NO-BREAK SPACE: a separator, but not one that ends a line
+        "/foo%20bar",  # a plain space
+    ],
+)
 async def test_login_accepts_printable_non_ascii(target):
     """Only the "C" categories and the line separators are refused, not everything outside ASCII."""
     app = _make_app()
@@ -358,18 +364,23 @@ LEGACY_CALLBACK = "https://oauth.example.org/token?code=%s"
 @pytest.fixture
 def callback_url(monkeypatch):
     """Sets OAUTH_URL_CALLBACK for a test, with the warned-once flag reset"""
+
     def set_url(url):
         monkeypatch.setattr(asfquart.generics, "OAUTH_URL_CALLBACK", url)
+
     monkeypatch.setattr(asfquart.generics, "_warned_legacy_callback", False)
     return set_url
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("setting, posted_to", [
-    (None, "https://oauth.apache.org/token-oidc"),                  # the default
-    ("https://oauth.example.org/token", "https://oauth.example.org/token"),
-    (OLD_DEFAULT_CALLBACK, "https://oauth.apache.org/token-oidc"),  # upgraded to the new default
-])
+@pytest.mark.parametrize(
+    "setting, posted_to",
+    [
+        (None, "https://oauth.apache.org/token-oidc"),  # the default
+        ("https://oauth.example.org/token", "https://oauth.example.org/token"),
+        (OLD_DEFAULT_CALLBACK, "https://oauth.apache.org/token-oidc"),  # upgraded to the new default
+    ],
+)
 async def test_callback_posts_code_in_body(monkeypatch, caplog, callback_url, setting, posted_to):
     """The code goes in a POST body, not the URL (#96)"""
     if setting:
@@ -447,13 +458,16 @@ async def test_callback_exchange_is_time_limited(monkeypatch):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("error", [
-    asyncio.TimeoutError(),
-    aiohttp.ClientConnectionError("https://oauth.apache.org/token-oidc?code=sekrit"),
-    OSError("could not load the CA store, while exchanging sekrit"),  # not wrapped by aiohttp
-    ssl.SSLError("handshake failed for code=sekrit"),
-    ConnectionResetError("reset, code=sekrit"),
-])
+@pytest.mark.parametrize(
+    "error",
+    [
+        asyncio.TimeoutError(),
+        aiohttp.ClientConnectionError("https://oauth.apache.org/token-oidc?code=sekrit"),
+        OSError("could not load the CA store, while exchanging sekrit"),  # not wrapped by aiohttp
+        ssl.SSLError("handshake failed for code=sekrit"),
+        ConnectionResetError("reset, code=sekrit"),
+    ],
+)
 async def test_callback_exchange_error(monkeypatch, caplog, error):
     """A provider that cannot be reached, or is too slow, is a failed login and not a 500."""
     app = _make_app()
@@ -470,8 +484,10 @@ async def test_callback_exchange_error(monkeypatch, caplog, error):
 @pytest.mark.generics
 async def test_callback_ssl_context_error(monkeypatch, caplog):
     """A failure to build the TLS settings is a failed login too, and not a 500."""
+
     def broken():
         raise OSError("no CA store")
+
     monkeypatch.setattr(asfquart.generics, "_oauth_ssl_context", broken)
     app = _make_app()
     provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
@@ -509,28 +525,31 @@ async def test_callback_logs_provider_status(monkeypatch, caplog, status):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("data", [
-    None,                         # JSON null
-    [],                           # not an object
-    "testuser",                   # not an object
-    {},                           # no uid
-    {"fullname": "Test User"},    # no uid
-    {"uid": None},
-    {"uid": ""},
-    {"uid": 12345},               # not a string
-    {"uid": ["testuser"]},
-    {"uid": "Test User"},         # not the shape of an ASF uid
-    {"uid": "testuser\n"},
-    {"uid": "testuser,ou=people"},
-    {"uid": "-testuser"},
-    {"uid": "_testuser"},
-    {"uid": "4user"},             # must start with a letter
-    {"uid": "a"},                 # at least two characters
-    {"uid": "TestUser"},
-    {"uid": "test.user"},
-    {"uid": "t\u00e9stuser"},
-    ValueError("not JSON"),       # body is not JSON
-])
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,  # JSON null
+        [],  # not an object
+        "testuser",  # not an object
+        {},  # no uid
+        {"fullname": "Test User"},  # no uid
+        {"uid": None},
+        {"uid": ""},
+        {"uid": 12345},  # not a string
+        {"uid": ["testuser"]},
+        {"uid": "Test User"},  # not the shape of an ASF uid
+        {"uid": "testuser\n"},
+        {"uid": "testuser,ou=people"},
+        {"uid": "-testuser"},
+        {"uid": "_testuser"},
+        {"uid": "4user"},  # must start with a letter
+        {"uid": "a"},  # at least two characters
+        {"uid": "TestUser"},
+        {"uid": "test.user"},
+        {"uid": "t\u00e9stuser"},
+        ValueError("not JSON"),  # body is not JSON
+    ],
+)
 async def test_callback_rejects_response_without_valid_uid(monkeypatch, data):
     """No session is created unless the provider's response identifies a user."""
     app = _make_app()
@@ -554,18 +573,21 @@ async def test_callback_accepts_asf_uids(monkeypatch, caplog, uid):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("data, problem", [
-    (None, "response is not a JSON object"),
-    (["testuser"], "response is not a JSON object"),
-    ("testuser", "response is not a JSON object"),
-    ({}, "response has no uid"),
-    ({"sub": "testuser", "nickname": "testuser"}, "response has no uid"),  # a provider with other field names
-    ({"uid": None}, "uid is not a string"),
-    ({"uid": 12345}, "uid is not a string"),
-    ({"uid": ""}, "uid is not in the form of an ASF user id"),
-    ({"uid": "a"}, "uid is not in the form of an ASF user id"),
-    ({"uid": "Test User"}, "uid is not in the form of an ASF user id"),
-])
+@pytest.mark.parametrize(
+    "data, problem",
+    [
+        (None, "response is not a JSON object"),
+        (["testuser"], "response is not a JSON object"),
+        ("testuser", "response is not a JSON object"),
+        ({}, "response has no uid"),
+        ({"sub": "testuser", "nickname": "testuser"}, "response has no uid"),  # a provider with other field names
+        ({"uid": None}, "uid is not a string"),
+        ({"uid": 12345}, "uid is not a string"),
+        ({"uid": ""}, "uid is not in the form of an ASF user id"),
+        ({"uid": "a"}, "uid is not in the form of an ASF user id"),
+        ({"uid": "Test User"}, "uid is not in the form of an ASF user id"),
+    ],
+)
 async def test_callback_logs_which_check_failed(monkeypatch, caplog, data, problem):
     """The log tells a provider that changed its response from a uid that was turned away."""
     app = _make_app()
@@ -596,6 +618,7 @@ async def test_callback_log_has_no_secrets(monkeypatch, caplog):
 
 
 # ---- The callback: TLS settings for the exchange ----
+
 
 @pytest.mark.generics
 def test_oauth_ssl_context():
@@ -632,6 +655,7 @@ async def test_callback_exchange_uses_ssl_context(monkeypatch):
 
 
 # ---- Pending logins: expired ones are removed, and there is a limit to how many are kept ----
+
 
 def _pending(*ages, now=1000.0):
     """A pending_states dictionary with one login for each age (in seconds), oldest first"""
@@ -724,7 +748,7 @@ async def test_abandoned_logins_are_removed_once_expired(monkeypatch):
         assert list(_pending_states_of(app)) == abandoned
         clock.now += 899
         fresh = await _start(app.test_client())
-        assert len(_pending_states_of(app)) == 6   # none has expired yet
+        assert len(_pending_states_of(app)) == 6  # none has expired yet
         clock.now += 2
         newest = await _start(app.test_client())
         assert list(_pending_states_of(app)) == [fresh, newest]
@@ -792,7 +816,7 @@ async def test_no_warning_when_only_expired_logins_are_removed(monkeypatch, capl
     async with app.test_app():
         for _ in range(3):
             await _start(app.test_client())
-            clock.now += 1000   # each has expired by the time the next one starts
+            clock.now += 1000  # each has expired by the time the next one starts
     assert len(_pending_states_of(app)) == 1
     assert "pending" not in caplog.text
 
@@ -802,7 +826,7 @@ def test_default_limit_on_pending_logins(monkeypatch):
     """The limit is DEFAULT_MAX_PENDING_LOGINS, as it is when the endpoint is set up."""
     assert asfquart.generics.DEFAULT_MAX_PENDING_LOGINS == 10000
     monkeypatch.setattr(asfquart.generics, "DEFAULT_MAX_PENDING_LOGINS", 2)
-    app = _make_app()   # set up by asfquart.construct()
+    app = _make_app()  # set up by asfquart.construct()
     endpoint = app.view_functions["oauth_endpoint"]
     cells = dict(zip(endpoint.__code__.co_freevars, endpoint.__closure__))
     assert cells["max_pending_logins"].cell_contents == 2
@@ -817,6 +841,7 @@ def test_limit_on_pending_logins_must_be_positive(limit):
 
 
 # ---- The redirect target of a login is kept in memory, so its length is limited ----
+
 
 @pytest.mark.generics
 @pytest.mark.parametrize("action", ["login", "logout"])
@@ -845,6 +870,7 @@ async def test_too_long_redirect_target_is_not_kept():
 
 # ---- The warning says how many logins were dropped ----
 
+
 def _pending_warnings(caplog):
     return [r.getMessage() for r in caplog.records if r.name == "asfquart.generics" and "pending" in r.getMessage()]
 
@@ -858,13 +884,13 @@ async def test_warning_counts_the_logins_that_were_dropped(monkeypatch, caplog):
     app = _make_app_with_limit(10)
     async with app.test_app():
         client = app.test_client()
-        for _ in range(11):                                  # the eleventh drops one
+        for _ in range(11):  # the eleventh drops one
             await client.get("/auth?login", scheme="https")
         assert _pending_warnings(caplog) == [
             "More than 10 OAuth logins are pending; 1 dropped since the last warning, oldest first."
             " A dropped login fails if its user completes it"
         ]
-        for _ in range(50):                                  # within the minute: counted, not logged
+        for _ in range(50):  # within the minute: counted, not logged
             await client.get("/auth?login", scheme="https")
         assert len(_pending_warnings(caplog)) == 1
         clock.now += 61
@@ -893,13 +919,14 @@ async def test_no_warning_once_nothing_is_being_dropped(monkeypatch, caplog):
         for _ in range(11):
             await client.get("/auth?login", scheme="https")
         assert len(_pending_warnings(caplog)) == 1
-        clock.now += 1000                                    # all of them expire
+        clock.now += 1000  # all of them expire
         for _ in range(5):
             await client.get("/auth?login", scheme="https")  # only expired logins are removed now
         assert len(_pending_warnings(caplog)) == 1
 
 
 # ---- The callback URL sent to the OAuth provider (#93) ----
+
 
 async def _callback_url(app, host):
     """Starts a login as a request for the given Host, and returns the callback URL sent to the provider"""
@@ -925,11 +952,14 @@ def _make_app_with_callback_host(callback_host):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("setting, netloc", [
-    ("https://myapp.apache.org", "myapp.apache.org"),
-    ("https://myapp.apache.org/", "myapp.apache.org"),
-    ("https://localhost.apache.org:8080", "localhost.apache.org:8080"),
-])
+@pytest.mark.parametrize(
+    "setting, netloc",
+    [
+        ("https://myapp.apache.org", "myapp.apache.org"),
+        ("https://myapp.apache.org/", "myapp.apache.org"),
+        ("https://localhost.apache.org:8080", "localhost.apache.org:8080"),
+    ],
+)
 @pytest.mark.parametrize("how", ["parameter", "module default"])
 async def test_callback_url_uses_configured_host(monkeypatch, setting, netloc, how):
     """With a callback host set, the Host header has no say in the callback URL"""
@@ -954,21 +984,24 @@ async def test_callback_host_parameter_wins_over_module_default(monkeypatch):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("setting", [
-    "http://myapp.apache.org",           # not https
-    "myapp.apache.org",                  # no scheme
-    "https://",                          # no host
-    "https://myapp.apache.org/app",      # a path
-    "https://myapp.apache.org?x=1",      # a query string
-    "https://myapp.apache.org#frag",     # a fragment
-    "https://user:pw@myapp.apache.org",  # userinfo
-    "https://myapp.apache.org:notaport",
-    "https://myapp.apache.org\\@evil.example",
-    "https://my app.apache.org",
-    "https://myapp.apache.org\n",
-    "https://[::1]",                     # IPv6 literals aren't supported
-    b"https://myapp.apache.org",         # not a string
-])
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "http://myapp.apache.org",  # not https
+        "myapp.apache.org",  # no scheme
+        "https://",  # no host
+        "https://myapp.apache.org/app",  # a path
+        "https://myapp.apache.org?x=1",  # a query string
+        "https://myapp.apache.org#frag",  # a fragment
+        "https://user:pw@myapp.apache.org",  # userinfo
+        "https://myapp.apache.org:notaport",
+        "https://myapp.apache.org\\@evil.example",
+        "https://my app.apache.org",
+        "https://myapp.apache.org\n",
+        "https://[::1]",  # IPv6 literals aren't supported
+        b"https://myapp.apache.org",  # not a string
+    ],
+)
 def test_callback_host_is_validated(monkeypatch, setting):
     """A bad callback host stops the app from starting, however it was set"""
     with pytest.raises(ValueError, match="callback host"):
@@ -997,12 +1030,16 @@ async def test_callback_host_set_after_setup_still_applies(monkeypatch, caplog):
 
 # ---- Referrer-Policy on URLs with a code ----
 
+
 @pytest.mark.generics
-@pytest.mark.parametrize("login, provider_args, status", [
-    ("/auth?login", {"data": dict(GOOD_OAUTH_DATA)}, 200),               # logged in
-    ("/auth?login=/dashboard", {"data": dict(GOOD_OAUTH_DATA)}, 200),    # logged in, with a Refresh
-    ("/auth?login", {"status": 404, "data": None}, 403),                 # provider refused the code
-])
+@pytest.mark.parametrize(
+    "login, provider_args, status",
+    [
+        ("/auth?login", {"data": dict(GOOD_OAUTH_DATA)}, 200),  # logged in
+        ("/auth?login=/dashboard", {"data": dict(GOOD_OAUTH_DATA)}, 200),  # logged in, with a Refresh
+        ("/auth?login", {"status": 404, "data": None}, 403),  # provider refused the code
+    ],
+)
 async def test_callback_sends_no_referrer(monkeypatch, login, provider_args, status):
     app = _make_app()
     provider = _FakeProvider(**provider_args)
@@ -1013,11 +1050,14 @@ async def test_callback_sends_no_referrer(monkeypatch, login, provider_args, sta
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("method, url, headers, status", [
-    ("GET", "/auth?state=notpending&code=abc123", {}, 403),                              # bad state
-    ("GET", "/auth?code=abc123", {}, 404),                                               # no state
-    ("POST", "/auth?state=notpending&code=abc123", {"Sec-Fetch-Site": "cross-site"}, 403),  # CSRF check
-])
+@pytest.mark.parametrize(
+    "method, url, headers, status",
+    [
+        ("GET", "/auth?state=notpending&code=abc123", {}, 403),  # bad state
+        ("GET", "/auth?code=abc123", {}, 404),  # no state
+        ("POST", "/auth?state=notpending&code=abc123", {"Sec-Fetch-Site": "cross-site"}, 403),  # CSRF check
+    ],
+)
 async def test_refused_request_with_code_sends_no_referrer(method, url, headers, status):
     app = _make_app()
     async with app.test_app():
@@ -1029,8 +1069,10 @@ async def test_refused_request_with_code_sends_no_referrer(method, url, headers,
 @pytest.mark.generics
 async def test_callback_error_sends_no_referrer(monkeypatch):
     """Even a 500 has the header"""
+
     async def broken(_data):
         raise RuntimeError("could not write the session")
+
     monkeypatch.setattr(asfquart.session, "awrite", broken)
     app = _make_app()
     app.config["PROPAGATE_EXCEPTIONS"] = False
@@ -1052,6 +1094,7 @@ async def test_no_referrer_policy_without_a_code(url):
 
 # ---- Requests that change state: logout by POST (#69) ----
 
+
 def _make_app_with_logout_by_get(logout_by_get):
     """An app that calls setup_oauth() itself, to pass logout_by_get"""
     app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
@@ -1068,6 +1111,7 @@ def _make_app_with_logout_same_site(logout_same_site):
 
 def _add_session_routes(app):
     """Routes to log in without the OAuth provider, and to see whether the browser is still logged in"""
+
     @app.route("/test-login")
     async def test_login():
         asfquart.session.write({"uid": "testuser"})
@@ -1134,14 +1178,17 @@ async def test_get_logout_from_another_site_is_refused(real_session, method, url
 
 @pytest.mark.generics
 @pytest.mark.parametrize("site", ["same-origin", "same-site", "cross-site"])
-@pytest.mark.parametrize("mode, dest", [
-    ("no-cors", "image"),       # <img src="/auth?logout">
-    ("no-cors", "script"),
-    ("cors", "empty"),          # fetch()
-    ("navigate", "iframe"),     # a frame is a navigation, but not one the user made
-    ("navigate", "embed"),
-    (None, None),               # Sec-Fetch-Site alone
-])
+@pytest.mark.parametrize(
+    "mode, dest",
+    [
+        ("no-cors", "image"),  # <img src="/auth?logout">
+        ("no-cors", "script"),
+        ("cors", "empty"),  # fetch()
+        ("navigate", "iframe"),  # a frame is a navigation, but not one the user made
+        ("navigate", "embed"),
+        (None, None),  # Sec-Fetch-Site alone
+    ],
+)
 async def test_get_logout_from_within_a_page_is_refused(real_session, site, mode, dest):
     """A page cannot log the user out by fetching the address, not even one on the same site:
     every host under apache.org is the same site as the app."""
@@ -1160,13 +1207,16 @@ async def test_get_logout_from_within_a_page_is_refused(real_session, site, mode
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("prefetch", [
-    {"Sec-Purpose": "prefetch"},
-    {"Sec-Purpose": "prefetch;prerender"},
-    {"Sec-Purpose": "prefetch;anonymous-client-ip"},
-    {"Purpose": "prefetch"},
-    {"X-Moz": "prefetch"},
-])
+@pytest.mark.parametrize(
+    "prefetch",
+    [
+        {"Sec-Purpose": "prefetch"},
+        {"Sec-Purpose": "prefetch;prerender"},
+        {"Sec-Purpose": "prefetch;anonymous-client-ip"},
+        {"Purpose": "prefetch"},
+        {"X-Moz": "prefetch"},
+    ],
+)
 @pytest.mark.parametrize("site", [None, "same-origin"])
 async def test_prefetched_get_logout_is_refused(real_session, caplog, prefetch, site):
     """A browser fetching the logout link ahead of time does not log the user out"""
@@ -1281,7 +1331,11 @@ async def test_get_logout_is_warned_about_once(real_session, caplog):
         client = app.test_client()
         await client.post("/auth?logout", scheme="https")
         await client.get("/auth?logout", scheme="https", headers=_navigation("cross-site"))
-        await client.get("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"})
+        await client.get(
+            "/auth?logout",
+            scheme="https",
+            headers={"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"},
+        )
         assert "requested with GET" not in caplog.text
         for _ in range(3):
             await client.get("/auth?logout", scheme="https")
@@ -1292,6 +1346,7 @@ async def test_get_logout_is_warned_about_once(real_session, caplog):
 
 
 # ---- Logout from another host of the same site (#69) ----
+
 
 async def _logout(client, method, site):
     """A logout as a browser would send it from a page of the given kind of site: a link for GET, a form for POST"""

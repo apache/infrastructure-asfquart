@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import time
 import re
+import time
 
 import pytest
 import quart
 
 import asfquart.auth
-from asfquart.auth import Requirements as R
+from asfquart.auth import Requirements as R  # noqa: N817
+
 
 class MyR(R):
     """Test auth methods in a Requirements subclass"""
@@ -22,7 +23,8 @@ class MyR(R):
     def false(cls, _session):
         return False, cls.E_ALWAYS_FALSE
 
-class LoneR():
+
+class LoneR:
     """Test auth methods in an independent class"""
 
     E_ALWAYS_FALSE = "Always False"
@@ -35,14 +37,16 @@ class LoneR():
     def false(cls, _session):
         return False, cls.E_ALWAYS_FALSE
 
+
 def _string_to_re(s):
     """convert arbitrary string to fullmatch regex"""
-    return re.escape(s) + '$'
+    return re.escape(s) + "$"
 
 
 def plain_function(_session):
     """A requirement that belongs to no class at all"""
     return True, ""
+
 
 @pytest.mark.auth
 async def test_auth_basics():
@@ -64,16 +68,21 @@ async def test_auth_basics():
 
     # Test with a bad requirement, should fail with a TypeError.
     with pytest.raises(TypeError):
+
         @asfquart.auth.require({R.member, print})
         async def requires_bad_thing():
             pass
+
     # Same bad one, but with explicit any_of
     with pytest.raises(TypeError):
+
         @asfquart.auth.require(any_of={R.member, print})
         async def requires_bad_thingy():
             pass
+
     # A plain function has no owning class at all; still a TypeError, not an AttributeError
     with pytest.raises(TypeError):
+
         @asfquart.auth.require(plain_function)
         async def requires_plain_function():
             pass
@@ -157,17 +166,24 @@ async def test_role_auth():
         await test_member_auth()
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
-    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}})
+    quart.session = quart.sessions.SecureCookieSession(
+        {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
+    )
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_CHAIR)):
         await test_member_and_chair_auth()
 
     # Test for either member of chair, should work as we have chair (but not member)
-    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}})
+    quart.session = quart.sessions.SecureCookieSession(
+        {app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
+    )
     await test_member_or_chair_auth()
 
     # Test for both member and chair, when we are both. should work.
-    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}})
+    quart.session = quart.sessions.SecureCookieSession(
+        {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
+    )
     await test_member_and_chair_auth()
+
 
 @pytest.mark.auth
 async def test_extended_auth():
@@ -190,17 +206,20 @@ async def test_extended_auth():
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(MyR.E_ALWAYS_FALSE)):
         await test_false()
 
+
 @pytest.mark.auth
 async def test_lone_auth():
     """Extended auth tests using independent class"""
 
     # cannot use independent class as a decorator
     with pytest.raises(TypeError):
+
         @asfquart.auth.require(LoneR.true)
         async def test_true():
             pass
 
     with pytest.raises(TypeError):
+
         @asfquart.auth.require(LoneR.false)
         async def test_false():
             pass
@@ -309,6 +328,7 @@ async def test_require_rejects_misuse():
 
     # An endpoint that is not async, with a bare decorator
     with pytest.raises(TypeError):
+
         @asfquart.auth.require
         def not_async():
             pass
@@ -316,6 +336,7 @@ async def test_require_rejects_misuse():
     # Requirements passed alongside the endpoint, where they would be ignored
     async def endpoint():
         pass
+
     with pytest.raises(TypeError):
         asfquart.auth.require(endpoint, all_of=R.member)
     with pytest.raises(TypeError):
@@ -361,8 +382,10 @@ def test_requirements_to_iter_is_deprecated():
 
 # ---- Sessions that aren't a ClientSession (#44) ----
 
+
 class _FullSession:
     """An app's own session class, with every attribute the requirements read"""
+
     def __init__(self, **values):
         self.uid = "testuser"
         self.isMember = self.isChair = self.isRoot = self.isRole = self.mfa = False
@@ -372,6 +395,7 @@ class _FullSession:
 
 class _OwnNamesSession:
     """An app's own session class with its own field names - only mfa matches"""
+
     def __init__(self):
         self.uid = "testuser"
         self.mfa = True
@@ -397,14 +421,17 @@ def test_session_protocol():
 
 
 @pytest.mark.auth
-@pytest.mark.parametrize("requirement, values", [
-    (R.mfa_protected, {"mfa": True}),
-    (R.member, {"isMember": True}),
-    (R.chair, {"isChair": True}),
-    (R.root, {"isRoot": True}),
-    (R.roleacct, {"isRole": True}),
-    (R.pmc_member, {"committees": ["httpd"]}),
-])
+@pytest.mark.parametrize(
+    "requirement, values",
+    [
+        (R.mfa_protected, {"mfa": True}),
+        (R.member, {"isMember": True}),
+        (R.chair, {"isChair": True}),
+        (R.root, {"isRoot": True}),
+        (R.roleacct, {"isRole": True}),
+        (R.pmc_member, {"committees": ["httpd"]}),
+    ],
+)
 def test_requirements_work_with_other_session_classes(requirement, values):
     assert requirement(_FullSession(**values))[0] is True
     assert requirement(_FullSession())[0] is False
@@ -426,6 +453,7 @@ async def test_require_names_the_missing_attribute(monkeypatch, requirement, att
 
     async def read():
         return own
+
     monkeypatch.setattr(asfquart.session, "read", read)
     ran = []
 
@@ -466,6 +494,7 @@ async def test_require_leaves_other_attribute_errors_alone(monkeypatch):
 
     async def read():
         return _FullSession()
+
     monkeypatch.setattr(asfquart.session, "read", read)
 
     class Own(R):
