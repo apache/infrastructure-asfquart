@@ -104,7 +104,7 @@ def test_mode_is_set_before_the_secret_is_written(tmp_path, monkeypatch):
     real_chmod = os.chmod
 
     def chmod(path, mode, *args, **kwargs):
-        seen.append((oct(mode), token_file.read_text()))     # what is in the file when its mode is set
+        seen.append((oct(mode), token_file.read_text()))  # what is in the file when its mode is set
         return real_chmod(path, mode, *args, **kwargs)
 
     monkeypatch.setattr(asfquart.base.os, "chmod", chmod)
@@ -169,12 +169,13 @@ def test_token_file_with_a_secret_is_left_alone(tmp_path, caplog):
     token_file.write_text("a-secret-that-was-put-there-by-hand\n")
     os.chmod(token_file, 0o600)
     app = asfquart.construct("foobar", app_dir=str(tmp_path))
-    assert app.secret_key == "a-secret-that-was-put-there-by-hand\n"   # used as it is, newline and all
+    assert app.secret_key == "a-secret-that-was-put-there-by-hand\n"  # used as it is, newline and all
     assert token_file.read_text() == "a-secret-that-was-put-there-by-hand\n"
     assert "is empty" not in caplog.text
 
 
 # ---- What docs/app-secret.md says an application can do ----
+
 
 def _login_app(**kwargs):
     app = asfquart.construct("foobar", oauth=False, **kwargs)
@@ -243,7 +244,7 @@ async def test_application_can_supply_its_own_secret(tmp_path, real_session):
     assert not (tmp_path / "apptoken.txt").exists()
 
     after = _login_app(app_dir=str(tmp_path), token_file=None)
-    after.secret_key = own_secret          # the same secret again, from wherever the application keeps it
+    after.secret_key = own_secret  # the same secret again, from wherever the application keeps it
     client.app = after
     assert (await (await client.get("/whoami", scheme="https")).get_json()) == {"uid": "testuser"}
 
@@ -251,17 +252,18 @@ async def test_application_can_supply_its_own_secret(tmp_path, real_session):
 async def test_loading_config_can_remove_the_secret(tmp_path, real_session):
     """config.from_object() replaces the secret with the object's SECRET_KEY, None included. Keeping
     the secret across the call, as docs/app-secret.md shows, avoids that."""
+
     class Settings:
         SECRET_KEY = None
         SOME_SETTING = "value"
 
     app = _login_app(app_dir=str(tmp_path))
     app.config.from_object(Settings)
-    assert app.secret_key is None           # the trap
+    assert app.secret_key is None  # the trap
 
     app = _login_app(app_dir=str(tmp_path))
     secret_key = app.secret_key
     app.config.from_object(Settings)
-    app.secret_key = secret_key             # the way round it
+    app.secret_key = secret_key  # the way round it
     assert app.config["SOME_SETTING"] == "value"
     await _logged_in_cookie(app)

@@ -40,6 +40,9 @@ test = [
     "pytest-asyncio>=1.3,<2",
     "pytest-mock>=3.10.0,<4",
 ]
+lint = [
+    "ruff>=0.17,<1",
+]
 
 [project.urls]
 Repository = "https://github.com/apache/infrastructure-asfquart"
@@ -47,6 +50,36 @@ Repository = "https://github.com/apache/infrastructure-asfquart"
 [build-system]
 requires = ["uv_build>=0.9.11,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+
+# The same rule set as tooling-trusted-releases
+[tool.ruff.lint]
+select = [
+    "A005",  # stdlib-module-shadowing
+    "ASYNC", # flake8-async
+    "C90",   # cyclomatic-complexity
+    "E",     # pycodestyle
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "RUF",   # ruff-checks
+    "S",     # flake8-bandit
+    "TC",    # flake8-type-checking
+    "TID",   # flake8-tidy-imports
+    "UP",    # pyupgrade
+    "W",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/asfquart/__init__.py" = ["F401"]  # imported so that the submodules are loaded
+"tests/**" = [
+    "S101", # assert is how pytest tests are written
+    "S105", # the tests are full of made-up secrets
+]
+"tests/ldap.py" = ["RUF001"]           # look-alike characters are the test data
+"tests/uid_rule.py" = ["RUF001"]
 
 [tool.pytest.ini_options]
 minversion = "7.2"

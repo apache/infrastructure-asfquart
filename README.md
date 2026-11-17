@@ -43,6 +43,7 @@ See the [documentation page](docs/README.md) for more information.
 import asfquart
 from asfquart.auth import Requirements as R
 
+
 def my_app() -> asfquart.base.QuartApp:
     # Construct the quart service. By default, the oauth gateway is enabled at /oauth.
     app = asfquart.construct("my_app_service")
@@ -54,9 +55,10 @@ def my_app() -> asfquart.base.QuartApp:
     @app.route("/secret")
     @asfquart.auth.require(R.committer)
     async def secret_page():
-      return "Secret stuff!"
+        return "Secret stuff!"
 
     return app
+
 
 if __name__ == "__main__":
     app = my_app()
@@ -130,6 +132,13 @@ Running the tests:
 uv sync --all-extras --group test
 
 uv run pytest
+```
+
+Linting and formatting, with the rules in `pyproject.toml`:
+
+```shell
+uv run --group lint ruff check
+uv run --group lint ruff format
 ```
 
 Building the package:

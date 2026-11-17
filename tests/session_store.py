@@ -8,6 +8,7 @@ import hashlib
 import pathlib
 import re
 import time
+import typing
 import urllib.parse
 
 import pytest
@@ -27,7 +28,7 @@ def _store_class_from_the_docs():
     blocks = re.findall(r"```python\n(.*?)```", DOC.read_text(encoding="utf-8"), flags=re.DOTALL)
     (source,) = [block for block in blocks if "class MemoryStore" in block]
     namespace = {}
-    exec(compile(source, str(DOC), "exec"), namespace)
+    exec(compile(source, str(DOC), "exec"), namespace)  # noqa: S102 - our own docs page
     return namespace["MemoryStore"]
 
 
@@ -45,6 +46,7 @@ def real_session(monkeypatch):
 @pytest.fixture
 def clock(monkeypatch):
     """Lets a test move time on, for the store and for asfquart alike"""
+
     class Clock:
         now = time.time()
 
@@ -56,7 +58,13 @@ class _Provider:
     """Stands in for aiohttp.client.ClientSession: the OAuth provider says who the user is"""
 
     status = 200
-    data = {"uid": "testuser", "fullname": "Test User", "pmcs": ["httpd"], "projects": ["httpd", "tomcat"], "isMember": True}
+    data: typing.ClassVar[dict] = {
+        "uid": "testuser",
+        "fullname": "Test User",
+        "pmcs": ["httpd"],
+        "projects": ["httpd", "tomcat"],
+        "isMember": True,
+    }
 
     def __call__(self, *args, **kwargs):
         return self
@@ -134,6 +142,7 @@ def _hash(sid):
 
 # ---- What is in the cookie, and what the store is given ----
 
+
 @pytest.mark.session
 async def test_cookie_holds_only_a_session_id(monkeypatch):
     """With a store, nothing about the user is in the cookie, and the store never has the session id."""
@@ -157,7 +166,7 @@ async def test_oauth_login_reads_back_through_the_store(monkeypatch):
     assert (await _json(client, "/whoami"))["uid"] == "testuser"
     shown = await _json(client, "/auth")
     assert shown["uid"] == "testuser"
-    assert shown["committees"] == ["httpd"]        # the provider's "pmcs"
+    assert shown["committees"] == ["httpd"]  # the provider's "pmcs"
     assert (await client.get("/members", scheme="https")).status_code == 200
 
 
@@ -187,6 +196,7 @@ async def test_logging_in_again_gives_a_new_session_id(monkeypatch):
 
 # ---- The functions to use with a store ----
 
+
 @pytest.mark.session
 async def test_awrite_and_aclear():
     app = _app(oauth=False)
@@ -196,7 +206,7 @@ async def test_awrite_and_aclear():
     await client.get("/clear", scheme="https")
     assert (await _json(client, "/whoami"))["uid"] is None
     assert app.sessions._sessions == {}
-    await client.get("/clear", scheme="https")     # with no session: not an error
+    await client.get("/clear", scheme="https")  # with no session: not an error
 
 
 @pytest.mark.session
@@ -268,6 +278,7 @@ async def test_areplace_falls_back_to_destroy_and_register():
 @pytest.mark.session
 async def test_areplace_must_not_be_used_without_replace_or_register():
     """With neither method areplace() fails, and only after it has removed the user's session."""
+
     class PlainStore:
         def __init__(self):
             self._store = MemoryStore()
@@ -281,9 +292,9 @@ async def test_areplace_must_not_be_used_without_replace_or_register():
     assert (await _json(client, "/whoami"))["uid"] == "testuser"
     assert len(store._sessions) == 1
     assert (await client.get("/replace", scheme="https")).status_code == 500
-    assert store._sessions == {}                                    # destroy() had already been called
+    assert store._sessions == {}  # destroy() had already been called
     assert (await _json(client, "/whoami")) == {"uid": None, "cookie": None}
-    await client.get("/write", scheme="https")                      # the other functions work without them
+    await client.get("/write", scheme="https")  # the other functions work without them
     assert (await _json(client, "/whoami"))["uid"] == "testuser"
     await client.get("/clear", scheme="https")
     assert (await _json(client, "/whoami"))["uid"] is None
@@ -308,7 +319,7 @@ async def test_replace_does_not_bring_back_a_revoked_session():
     @app.route("/replace-after-revoke")
     async def replace_after_revoke():
         session = await asfquart.session.read()
-        store.revoke(session.uid)                                   # as another request might, in between
+        store.revoke(session.uid)  # as another request might, in between
         await asfquart.session.areplace(asfquart.session.ClientSession({"uid": session.uid}))
         return "ok"
 
@@ -327,11 +338,11 @@ async def test_replace_does_not_bring_back_a_session_that_has_timed_out(clock):
     client = app.test_client()
     await client.get("/write", scheme="https")
     clock.now += 3601
-    assert len(store._sessions) == 1                                # ended, and still in the store
+    assert len(store._sessions) == 1  # ended, and still in the store
     assert (await client.get("/login-as?uid=testuser", scheme="https")).status_code == 200
     assert store._sessions == {}
     assert (await _json(client, "/whoami")) == {"uid": None, "cookie": None}
-    await client.get("/login-as?uid=testuser", scheme="https")      # the cookie is clear now: a new session
+    await client.get("/login-as?uid=testuser", scheme="https")  # the cookie is clear now: a new session
     assert (await _json(client, "/whoami"))["uid"] == "testuser"
 
 
@@ -361,6 +372,7 @@ async def test_areplace_refuses_a_session_without_a_uid():
 @pytest.mark.session
 async def test_store_that_is_false_is_taken_for_no_store():
     """asfquart tests the store's truth value, so an empty store with a length is not used at all."""
+
     class CountedStore(MemoryStore):
         def __len__(self):
             return len(self._sessions)
@@ -371,13 +383,14 @@ async def test_store_that_is_false_is_taken_for_no_store():
     await client.get("/write", scheme="https")
     whoami = await _json(client, "/whoami")
     assert whoami["uid"] == "testuser"
-    assert store._sessions == {}                                    # the store was never called
+    assert store._sessions == {}  # the store was never called
     assert "sid" not in whoami["cookie"]
-    assert whoami["cookie"]["uid"] == "testuser"                    # the session is in the cookie
-    assert bool(MemoryStore()) is True                              # no __len__, no __bool__: always true
+    assert whoami["cookie"]["uid"] == "testuser"  # the session is in the cookie
+    assert bool(MemoryStore()) is True  # no __len__, no __bool__: always true
 
 
 # ---- What the store looks after: time limits, and ending sessions ----
+
 
 @pytest.mark.session
 async def test_store_applies_the_idle_timeout(clock):
@@ -385,11 +398,11 @@ async def test_store_applies_the_idle_timeout(clock):
     client = app.test_client()
     await client.get("/write", scheme="https")
     for _ in range(5):
-        clock.now += 3000                                   # used within the hour, each time
+        clock.now += 3000  # used within the hour, each time
         assert (await _json(client, "/whoami"))["uid"] == "testuser"
     clock.now += 3601
     gone = await _json(client, "/whoami")
-    assert gone == {"uid": None, "cookie": None}            # and asfquart has taken the id out of the cookie
+    assert gone == {"uid": None, "cookie": None}  # and asfquart has taken the id out of the cookie
     assert app.sessions._sessions == {}
 
 
@@ -399,9 +412,9 @@ async def test_store_applies_the_maximum_lifetime(clock):
     client = app.test_client()
     await client.get("/write", scheme="https")
     for _ in range(28):
-        clock.now += 3000                                   # in use all day
+        clock.now += 3000  # in use all day
         assert (await _json(client, "/whoami"))["uid"] == "testuser"
-    clock.now += 3000                                       # 87000 seconds after the login
+    clock.now += 3000  # 87000 seconds after the login
     assert (await _json(client, "/whoami"))["uid"] is None
 
 
@@ -428,7 +441,7 @@ async def test_abandoned_sessions_are_purged(clock):
     store = MemoryStore(max_idle=3600, max_age=DAY)
     app = _app(store=store, oauth=False)
     for _ in range(5):
-        await app.test_client().get("/write", scheme="https")   # five browsers, never seen again
+        await app.test_client().get("/write", scheme="https")  # five browsers, never seen again
     assert len(store._sessions) == 5
     clock.now += 3601
     assert store.purge() == 5
@@ -436,7 +449,7 @@ async def test_abandoned_sessions_are_purged(clock):
     for _ in range(3):
         await app.test_client().get("/write", scheme="https")
     clock.now += 3601
-    await app.test_client().get("/write", scheme="https")       # create() purges as well
+    await app.test_client().get("/write", scheme="https")  # create() purges as well
     assert len(store._sessions) == 1
 
 
@@ -465,6 +478,7 @@ async def test_made_up_session_id_is_not_a_session():
 @pytest.mark.session
 async def test_error_in_the_store_is_a_500():
     """asfquart does not catch what the store raises."""
+
     class BrokenStore(MemoryStore):
         async def validate(self, hsid):
             raise ConnectionError("database unavailable")
@@ -478,6 +492,7 @@ async def test_error_in_the_store_is_a_500():
 @pytest.mark.session
 async def test_create_that_fails_leaves_no_cookie():
     """The session id goes into the cookie only once create() has returned."""
+
     class FullStore(MemoryStore):
         async def create(self, hsid, session_data):
             raise ConnectionError("database unavailable")
@@ -489,6 +504,7 @@ async def test_create_that_fails_leaves_no_cookie():
 
 
 # ---- The session object ----
+
 
 @pytest.mark.session
 async def test_store_keeps_the_data_and_makes_the_session_from_it(monkeypatch):
@@ -507,13 +523,13 @@ async def test_store_keeps_the_data_and_makes_the_session_from_it(monkeypatch):
     await _oauth_login(client, monkeypatch)
     (entry,) = store._sessions.values()
     assert type(entry[2]) is dict and entry[3] is None
-    assert entry[2]["pmcs"] == ["httpd"]                            # the provider's name for it
+    assert entry[2]["pmcs"] == ["httpd"]  # the provider's name for it
     hsid = next(iter(store._sessions))
     first, second = await store.validate(hsid), await store.validate(hsid)
     assert isinstance(first, asfquart.session.ClientSession)
-    assert first == second and first is not second                  # made anew each time
+    assert first == second and first is not second  # made anew each time
     assert first.committees == ["httpd"]
-    await client.get("/scribble", scheme="https")                   # a request changes its own copy only
+    await client.get("/scribble", scheme="https")  # a request changes its own copy only
     assert (await _json(client, "/whoami"))["uid"] == "testuser"
     assert (await store.validate(hsid)).committees == ["httpd"]
     assert store.revoke("testuser") == 1

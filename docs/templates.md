@@ -10,14 +10,16 @@ used as the page response for the route/endpoint.
 
 ```python
 import asfquart
+
 APP = asfquart.APP
 
-@APP.use_template('templates/example.ezt')
+
+@APP.use_template("templates/example.ezt")
 async def page_example():
     data = {
-        'title': 'Example page',
-        'count': 42,
-        }
+        "title": "Example page",
+        "count": 42,
+    }
     return data
 ```
 

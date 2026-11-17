@@ -3,6 +3,7 @@
 import pathlib
 
 import pytest
+
 import asfquart
 
 TEST_CONFIG_FILENAME = pathlib.Path(__file__).parent / "data/config.test.yaml"
@@ -21,4 +22,4 @@ async def test_config_static():
     # Async test
     # the decorator @asfquart.config.static wraps the function to an async method
     # suppress inspections as they fail to recognize that
-    await config_callback(TEST_CONFIG_FILENAME)  # noqa
+    await config_callback(TEST_CONFIG_FILENAME)

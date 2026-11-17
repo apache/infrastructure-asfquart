@@ -10,17 +10,15 @@ import posixpath
 import re
 import secrets
 import ssl
+import time
 import unicodedata
 import urllib
 import urllib.parse
-import time
-import typing
 
-import quart
 import aiohttp
+import quart
 
 import asfquart  # implies .session
-
 
 # These are the ASF OAuth URLs for init and verification. Used for setup_oauth()
 # - OAUTH_URL_INIT: where the browser is sent to log in. asfquart does not connect to it itself.
@@ -140,7 +138,7 @@ def _refuse_logout(logout_by_get, logout_same_site):
             status=405,
             response="Log out with a POST request.\n",
             headers={"Allow": "POST"},
-            content_type="text/plain; charset=utf-8"
+            content_type="text/plain; charset=utf-8",
         )
     # A browser that is fetching the page ahead of time, in case the user goes there, has not been
     # asked to log anyone out. Sec-Purpose is the standard header; the other two are older.
@@ -161,7 +159,9 @@ def _refuse_logout(logout_by_get, logout_same_site):
             allowed = allowed or site == "none"
             # And it is the user going to the address in a window or tab, not a page fetching it
             # for an image, a script or a frame
-            allowed = allowed and headers.get("Sec-Fetch-Mode") == "navigate" and headers.get("Sec-Fetch-Dest") == "document"
+            allowed = (
+                allowed and headers.get("Sec-Fetch-Mode") == "navigate" and headers.get("Sec-Fetch-Dest") == "document"
+            )
         if not allowed:
             return quart.Response(status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8")
     if by_get and not _warned_get_logout:
@@ -207,7 +207,7 @@ def _is_oauth_endpoint(target: str, uri: str) -> bool:
     return posixpath.normpath(path) == uri
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _oauth_ssl_context() -> ssl.SSLContext:
     """The TLS settings for the code exchange with the OAuth provider: the provider's certificate
     must be valid, it must be for the provider's host name, and the connection must use TLS 1.2
@@ -221,7 +221,7 @@ def _oauth_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def _oauth_data_problem(oauth_data) -> typing.Optional[str]:
+def _oauth_data_problem(oauth_data) -> str | None:
     """Tests whether the OAuth provider's response identifies a user. Returns None if it does,
     and otherwise what is wrong with it, for the log. The response itself is not in the result."""
     if not isinstance(oauth_data, dict):
@@ -255,14 +255,14 @@ def _purge_pending_states(pending_states: dict, workflow_timeout: int, max_size:
     return evicted
 
 
-def setup_oauth(
+def setup_oauth(  # noqa: C901
     app,
     uri=DEFAULT_OAUTH_URI,
     workflow_timeout: int = 900,
-    max_pending_logins: typing.Optional[int] = None,
-    callback_host: typing.Optional[str] = None,
-    logout_by_get: typing.Optional[bool] = None,
-    logout_same_site: typing.Optional[bool] = None,
+    max_pending_logins: int | None = None,
+    callback_host: str | None = None,
+    logout_by_get: bool | None = None,
+    logout_same_site: bool | None = None,
 ):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
@@ -310,7 +310,8 @@ def setup_oauth(
             LOGGER.warning(
                 "More than %d OAuth logins are pending; %d dropped since the last warning, oldest first."
                 " A dropped login fails if its user completes it",
-                max_pending_logins, evicted_since_warning,
+                max_pending_logins,
+                evicted_since_warning,
             )
             last_eviction_warning = time.time()
             evicted_since_warning = 0
@@ -324,14 +325,12 @@ def setup_oauth(
         return response
 
     @app.route(uri, methods=["GET", "POST"])
-    async def oauth_endpoint():
+    async def oauth_endpoint():  # noqa: C901
         # lightweight CSRF protection.
         if quart.request.method == "POST":
             if quart.request.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "same-site"):
                 return quart.Response(
-                    status=403,
-                    response="CSRF Protection\n",
-                    content_type="text/plain; charset=utf-8"
+                    status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8"
                 )
         # Of the requests below, three change state. Starting a login and completing one have to
         # work with GET, because the browser arrives at both by a redirect. Logging out does not.
@@ -343,9 +342,7 @@ def setup_oauth(
             # endpoint would let another site ask for a logout, by way of a login
             if login_uri and (not _is_local_redirect(login_uri) or _is_oauth_endpoint(login_uri, uri)):
                 return quart.Response(
-                    status=400,
-                    response="Invalid redirect URI.\n",
-                    content_type="text/plain; charset=utf-8"
+                    status=400, response="Invalid redirect URI.\n", content_type="text/plain; charset=utf-8"
                 )
             state = secrets.token_hex(16)
             browser = quart.request.cookies.get(STATE_COOKIE_NAME) or secrets.token_hex(16)
@@ -380,9 +377,7 @@ def setup_oauth(
             await asfquart.session.aclear()
             if logout_uri and not _is_local_redirect(logout_uri):
                 response = quart.Response(
-                    status=400,
-                    response="Invalid redirect URI.\n",
-                    content_type="text/plain; charset=utf-8"
+                    status=400, response="Invalid redirect URI.\n", content_type="text/plain; charset=utf-8"
                 )
             elif logout_uri:  # if called with /auth=logout=/foo, redirect to /foo
                 response = quart.redirect(logout_uri)
@@ -390,9 +385,7 @@ def setup_oauth(
                 response = quart.Response(status=204)
             else:
                 response = quart.Response(
-                    status=200,
-                    response="Client session removed, goodbye!\n",
-                    content_type="text/plain; charset=utf-8"
+                    status=200, response="Client session removed, goodbye!\n", content_type="text/plain; charset=utf-8"
                 )
             response.headers["Clear-Site-Data"] = '"cache", "cookies", "storage"'
             return response
@@ -411,8 +404,11 @@ def setup_oauth(
                 if (state_data is None) or (state_data[0] < (time.time() - workflow_timeout)):
                     return quart.Response(
                         status=403,
-                        response=f"Invalid or expired OAuth state provided. OAuth workflows must be completed within {workflow_timeout} seconds.\n",
-                        content_type="text/plain; charset=utf-8"
+                        response=(
+                            "Invalid or expired OAuth state provided. "
+                            f"OAuth workflows must be completed within {workflow_timeout} seconds.\n"
+                        ),
+                        content_type="text/plain; charset=utf-8",
                     )
                 redirect_uri = state_data[1]
                 oauth_data = None
@@ -435,9 +431,7 @@ def setup_oauth(
                 if problem is not None:
                     LOGGER.warning("OAuth code exchange failed: %s", problem)
                     return quart.Response(
-                        status=403,
-                        response="OAuth authentication failed.\n",
-                        content_type="text/plain; charset=utf-8"
+                        status=403, response="OAuth authentication failed.\n", content_type="text/plain; charset=utf-8"
                     )
                 # The user has just authenticated: this is a new session, with the full lifetime
                 await asfquart.session.awrite(oauth_data, new_session=True)
@@ -449,13 +443,13 @@ def setup_oauth(
                         status=200,
                         response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
                         headers={"Refresh": f"0; url={redirect_uri}"},
-                        content_type="text/plain; charset=utf-8"
+                        content_type="text/plain; charset=utf-8",
                     )
                 # Otherwise, just say hi
                 return quart.Response(
                     status=200,
                     response=f"Successfully logged in! Welcome, {oauth_data['uid']}\n",
-                    content_type="text/plain; charset=utf-8"
+                    content_type="text/plain; charset=utf-8",
                 )
             else:  # Just spit out existing session if it's there
                 client_session = await asfquart.session.read()
@@ -464,9 +458,7 @@ def setup_oauth(
                         return client_session.model_dump()
                     return client_session
                 return quart.Response(
-                    status=404,
-                    response="No active session found.\n",
-                    content_type="text/plain; charset=utf-8"
+                    status=404, response="No active session found.\n", content_type="text/plain; charset=utf-8"
                 )
 
 
@@ -497,8 +489,4 @@ def enforce_login(app, redirect_uri=DEFAULT_OAUTH_URI):
             quoted_path = urllib.parse.quote(full_path)
             return quart.redirect(f"{redirect_uri}?login={quoted_path}")
         # If we have a session, but still no access, just say so in plain text.
-        return quart.Response(
-            status=error.errorcode,
-            response=error.message,
-            content_type="text/plain; charset=utf-8"
-        )
+        return quart.Response(status=error.errorcode, response=error.message, content_type="text/plain; charset=utf-8")

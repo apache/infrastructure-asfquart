@@ -91,7 +91,7 @@ application without a token file, and set `app.secret_key` before the first requ
 
 ```python
 app = asfquart.construct("myapp", token_file=None)
-app.secret_key = load_my_secret()    # the same value every time, from wherever it is kept
+app.secret_key = load_my_secret()  # the same value every time, from wherever it is kept
 ```
 
 The secret is then the application's to look after:

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """ASFQuart - LDAP Authentication methods and decorators"""
-from . import base
+
 import re
 import time
+
+from . import base
 
 # The ASF LDAP server, used only for requests with an "Authorization: Basic" header and no session
 # cookie: to check the password (on every such request) and to look up project memberships (cached
@@ -28,6 +30,7 @@ DEFAULT_LDAP_CACHE_MAX_ENTRIES = 1000  # ... for at most this many users; the le
 try:
     import asfpy.aioldap
     import bonsai.errors
+
     LDAP_SUPPORTED = True
 except ModuleNotFoundError:
     LDAP_SUPPORTED = False
@@ -64,7 +67,7 @@ class LDAPClient:
         self.dn = DEFAULT_LDAP_BASE % username
         self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)
 
-    async def get_affiliations(self):
+    async def get_affiliations(self):  # noqa: C901
         """Scans for which projects this user is a part of. Returns a dict with memberships of each
         pmc/committer role (member/owner in LDAP)"""
         all_projects = DEFAULT_LDAP_GROUP_BASE

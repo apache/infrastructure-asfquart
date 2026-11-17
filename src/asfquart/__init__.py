@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ensure all submodules are loaded
-from . import auth, config, base, session, utils
+from . import auth, base, config, session, utils
 
 # This will be rewritten once construct() is called.
 APP = None

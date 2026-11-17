@@ -19,23 +19,23 @@ name for this (and internally Quart calls this .import_name), it can
 be anything and the .name property treats it as arbitrary.
 """
 
-import sys
 import asyncio
-import pathlib
-import secrets
-import os
-import stat
 import logging
+import os
+import pathlib
 import re
+import secrets
 import signal
+import stat
+import sys
 
 import asfpy.twatcher
-import quart  # implies .app and .utils
-import hypercorn.utils
-import ezt
 import easydict
-import yaml
+import ezt
+import hypercorn.utils
+import quart  # implies .app and .utils
 import watchfiles
+import yaml
 
 from . import utils
 
@@ -54,8 +54,8 @@ except NameError:
 LOGGER = logging.getLogger(__name__)
 SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this user only
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
-CONFIG_FNAME = 'config.yaml'
-TOKEN_FNAME = 'apptoken.txt'
+CONFIG_FNAME = "config.yaml"
+TOKEN_FNAME = "apptoken.txt"  # noqa: S105 - a file name, not a secret
 
 # The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
 # letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
@@ -73,7 +73,7 @@ TOKEN_FNAME = 'apptoken.txt'
 ASF_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
 
-class ASFQuartException(Exception):
+class ASFQuartException(Exception):  # noqa: N818 - public name
     """Global ASFQuart exception with a message and an error code, for the HTTP response."""
 
     def __init__(self, message: str = "An error occurred", errorcode: int = 500):
@@ -86,14 +86,14 @@ class QuartApp(quart.Quart):
     """Subclass of quart.Quart to include our specific features."""
 
     def __init__(
-            self,
-            app_id: str,
-            /,
-            app_dir: str | None = None,
-            cfg_file: str | None = None,
-            token_file: str | None = TOKEN_FNAME,
-            *args,
-            **kw
+        self,
+        app_id: str,
+        /,
+        app_dir: str | None = None,
+        cfg_file: str | None = None,
+        token_file: str | None = TOKEN_FNAME,
+        *args,
+        **kw,
     ):
         """Construct an ASFQuart web application.
 
@@ -146,9 +146,10 @@ class QuartApp(quart.Quart):
                 file_mode = st.st_mode & 0o777
                 if file_mode != SECRETS_FILE_MODE:
                     sys.stderr.write(
-                        f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
+                        f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, "
+                        f"we were expecting {oct(SECRETS_FILE_MODE)}\n"
                     )
-                with open(_token_filename, encoding='utf-8') as sfile:
+                with open(_token_filename, encoding="utf-8") as sfile:
                     self.secret_key = sfile.read()
                 if not self.secret_key.strip():
                     # An empty file is not a secret: the app may have been stopped between creating
@@ -159,11 +160,13 @@ class QuartApp(quart.Quart):
                         # Set the mode first, so that the secret is never in a file that others can
                         # read. If the mode cannot be set, the secret is not written to the file.
                         os.chmod(_token_filename, SECRETS_FILE_MODE)
-                        with open(_token_filename, "w", encoding='utf-8') as sfile:
+                        with open(_token_filename, "w", encoding="utf-8") as sfile:
                             sfile.write(self.secret_key)
                     except OSError:
                         # Not only a lack of permission: a read-only file system or a full disk too
-                        LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
+                        LOGGER.error(
+                            f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
+                        )
             else:  # No token file yet, try to write, warn if we cannot
                 self.secret_key = secrets.token_hex()
                 ### TBD: throw the PermissionError once we stabilize how to locate
@@ -174,21 +177,29 @@ class QuartApp(quart.Quart):
                     # ensure we don't have umask overriding what we want to achieve.
                     umask_original = os.umask(SECRETS_FILE_UMASK)  # Set new umask, log the old one
                     try:
-                        fd = os.open(_token_filename, flags=(os.O_WRONLY | os.O_CREAT | os.O_EXCL), mode=SECRETS_FILE_MODE)
+                        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                        fd = os.open(_token_filename, flags=flags, mode=SECRETS_FILE_MODE)
                     finally:
                         os.umask(umask_original)  # reset umask to the original setting
-                    with open(fd, "w", encoding='utf-8') as sfile:
+                    with open(fd, "w", encoding="utf-8") as sfile:
                         sfile.write(self.secret_key)
                 except OSError:
                     # Not only a lack of permission: a read-only file system or a full disk too
-                    LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
+                    LOGGER.error(
+                        f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!"
+                    )
 
-    def runx(self, /,
-             host="0.0.0.0", port=None,
-             debug=True, loop=None,
-             certfile=None, keyfile=None,
-             extra_files=frozenset(), # OK, because immutable
-             ):
+    def runx(
+        self,
+        /,
+        host="0.0.0.0",  # noqa: S104 - the default has always been all interfaces
+        port=None,
+        debug=True,
+        loop=None,
+        certfile=None,
+        keyfile=None,
+        extra_files=frozenset(),  # OK, because immutable
+    ):
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -252,25 +263,31 @@ class QuartApp(quart.Quart):
         # Note: Quart.run() allows for optional signal handlers. We do not.
 
         shutdown_event = asyncio.Event()
+
         def _shutdown_handler(*_) -> None:
             shutdown_event.set()
+
         loop.add_signal_handler(signal.SIGTERM, _shutdown_handler)
         loop.add_signal_handler(signal.SIGINT, _shutdown_handler)
+
         async def shutdown_wait():
             "Log a nice message when we're signalled to shut down."
             await shutdown_event.wait()
-            LOGGER.info('SHUTDOWN: Performing graceful exit...')
+            LOGGER.info("SHUTDOWN: Performing graceful exit...")
             gathered.cancel()
             raise hypercorn.utils.ShutdownError()
 
         restart_event = asyncio.Event()
+
         def _restart_handler(*_) -> None:
             restart_event.set()
+
         loop.add_signal_handler(signal.SIGUSR2, _restart_handler)
+
         async def restart_wait():
             "Log a nice message when we're signalled to restart."
             await restart_event.wait()
-            LOGGER.info('RESTART: Performing process restart...')
+            LOGGER.info("RESTART: Performing process restart...")
             gathered.cancel()
             raise quart.utils.MustReloadError()
 
@@ -284,16 +301,13 @@ class QuartApp(quart.Quart):
         # .watch() will raise MustReloadError
         # shutdown_wait() will raise ShutdownError
         # restart_wait() will raise MustReloadError
-        t1 = loop.create_task(self.watch(extra_files),
-                              name=f'Watch:{self.app_id}')
-        t2 = loop.create_task(shutdown_wait(),
-                              name=f'Shutdown:{self.app_id}')
-        t3 = loop.create_task(restart_wait(),
-                              name=f'Restart:{self.app_id}')
+        t1 = loop.create_task(self.watch(extra_files), name=f"Watch:{self.app_id}")
+        t2 = loop.create_task(shutdown_wait(), name=f"Shutdown:{self.app_id}")
+        t3 = loop.create_task(restart_wait(), name=f"Restart:{self.app_id}")
         aw = asyncio.gather(t1, t2, t3)
 
-        gathered = utils.CancellableTask(aw, loop=loop,
-                                         name=f'Trigger:{self.app_id}')
+        gathered = utils.CancellableTask(aw, loop=loop, name=f"Trigger:{self.app_id}")
+
         async def await_gathered():
             await gathered.task
 
@@ -305,19 +319,23 @@ class QuartApp(quart.Quart):
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
         py_files.remove(None)  # the built-in modules
 
-        if os.path.isfile(self.cfg_path):
-            cfg_files = { self.cfg_path }
+        if os.path.isfile(self.cfg_path):  # noqa: ASYNC240 - one local check, when the watcher starts
+            cfg_files = {self.cfg_path}
         else:
             cfg_files = set()
 
         watched_files = py_files | cfg_files | extra_files
 
         # quiet down the watchfiles logger
-        logging.getLogger('watchfiles.main').setLevel(logging.INFO)
+        logging.getLogger("watchfiles.main").setLevel(logging.INFO)
 
         async for changes in watchfiles.awatch(*watched_files):
             for event in changes:
-                if (event[0] == watchfiles.Change.modified or event[0] == watchfiles.Change.deleted or event[0] == watchfiles.Change.added):
+                if (
+                    event[0] == watchfiles.Change.modified
+                    or event[0] == watchfiles.Change.deleted
+                    or event[0] == watchfiles.Change.added
+                ):
                     LOGGER.info(f"File changed: {event[1]}")
                     raise quart.utils.MustReloadError
         # NOTREACHED
@@ -331,13 +349,13 @@ class QuartApp(quart.Quart):
             loop.run_until_complete(task)
         except quart.utils.MustReloadError:
             reload_ = True
-            LOGGER.debug('FOUND: MustReloadError')
+            LOGGER.debug("FOUND: MustReloadError")
         except ExceptionGroup as e:
-            reload_ = (e.subgroup(quart.utils.MustReloadError) is not None)
-            LOGGER.debug(f'FOUND: ExceptionGroup, reload_={reload_}')
+            reload_ = e.subgroup(quart.utils.MustReloadError) is not None
+            LOGGER.debug(f"FOUND: ExceptionGroup, reload_={reload_}")
         finally:
             try:
-                quart.app._cancel_all_tasks(loop) # pylint: disable=protected-access
+                quart.app._cancel_all_tasks(loop)  # pylint: disable=protected-access
                 loop.run_until_complete(loop.shutdown_asyncgens())
             finally:
                 asyncio.set_event_loop(None)
@@ -349,7 +367,7 @@ class QuartApp(quart.Quart):
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
 
-    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):
+    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):  # noqa: N803 - public argument name
         # Decorator to use a template, specified by path or provided.
 
         if isinstance(path_or_T, ezt.Template):
@@ -387,11 +405,11 @@ class QuartApp(quart.Quart):
         @self.while_serving
         async def perform_runner():
             ctask = utils.CancellableTask(func(), name=name)
-            #print('RUNNER STARTED:', ctask.task)
+            # print('RUNNER STARTED:', ctask.task)
 
             yield  # back to serving
 
-            #print('RUNNER STOPPING:', ctask.task)
+            # print('RUNNER STOPPING:', ctask.task)
             ctask.cancel()
 
 
@@ -405,7 +423,7 @@ def construct(
     force_login: bool = True,
     *args,
     basic_auth: bool = False,
-    **kw
+    **kw,
 ):
     """Construct an ASFQuart web application.
 
@@ -438,6 +456,7 @@ def construct(
         # Fail now, and not at the first request with a Basic header: without the LDAP libraries
         # the app could not do what it was asked to, and nobody would be told.
         from . import ldap  # here, as ldap imports this module
+
         if not ldap.LDAP_SUPPORTED:
             raise RuntimeError(
                 "basic_auth=True needs the LDAP libraries, which are not installed."
@@ -453,15 +472,11 @@ def construct(
         if not quart.request.body._complete.is_set():  # pylint: disable=protected-access
             async for _data in quart.request.body:
                 pass
-        return quart.Response(
-            status=error.errorcode,
-            response=error.message,
-            content_type="text/plain; charset=utf-8"
-        )
+        return quart.Response(status=error.errorcode, response=error.message, content_type="text/plain; charset=utf-8")
 
     # try to load the config information from app.cfg_path
     if os.path.isfile(app.cfg_path):
-        app.cfg.update(yaml.safe_load(open(app.cfg_path, encoding='utf-8')))
+        app.cfg.update(yaml.safe_load(open(app.cfg_path, encoding="utf-8")))
 
     # Provide our standard filename argument converter.
     import asfquart.utils

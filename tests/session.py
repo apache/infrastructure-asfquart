@@ -4,6 +4,7 @@ import time
 
 import pytest
 import quart
+
 import asfquart
 
 
@@ -79,7 +80,7 @@ def _session_app(**cfg):
     async def change():
         session = await asfquart.session.read()
         session["fullname"] = "Changed"
-        asfquart.session.write(session)   # as docs/sessions.md shows
+        asfquart.session.write(session)  # as docs/sessions.md shows
         return "ok"
 
     return app
@@ -106,9 +107,9 @@ async def test_session_in_use_does_not_go_idle(clock):
     client = app.test_client()
     await _get(client, "/login")
     for _ in range(10):
-        clock.now += 60          # never 100 seconds without a request
+        clock.now += 60  # never 100 seconds without a request
         assert (await _get(client, "/use"))["uid"] == "testuser"
-    clock.now += 101             # and then nothing for longer than the limit
+    clock.now += 101  # and then nothing for longer than the limit
     assert (await _get(client, "/use"))["uid"] is None
 
 
@@ -119,9 +120,9 @@ async def test_session_ends_at_its_maximum_age_however_much_it_is_used(clock):
     await _get(client, "/login")
     for _ in range(19):
         clock.now += 50
-        assert (await _get(client, "/use"))["uid"] == "testuser"    # up to 950 seconds old
+        assert (await _get(client, "/use"))["uid"] == "testuser"  # up to 950 seconds old
     clock.now += 51
-    assert (await _get(client, "/use"))["uid"] is None              # 1001 seconds old
+    assert (await _get(client, "/use"))["uid"] is None  # 1001 seconds old
 
 
 @pytest.mark.session
@@ -162,7 +163,7 @@ async def test_limits_of_zero_mean_no_limit(clock):
     app = _session_app(MAX_SESSION_IDLE=0, MAX_SESSION_AGE=0)
     client = app.test_client()
     await _get(client, "/login")
-    clock.now += 20 * DAY        # quart itself does not accept a cookie that it signed more than 31 days ago
+    clock.now += 20 * DAY  # quart itself does not accept a cookie that it signed more than 31 days ago
     assert (await _get(client, "/use"))["uid"] == "testuser"
 
 
@@ -172,7 +173,7 @@ async def test_expiry_time_argument_is_the_idle_limit_for_that_call(clock):
     client = app.test_client()
     await _get(client, "/login")
     clock.now += 500
-    assert (await _get(client, "/use?idle=600"))["uid"] == "testuser"   # within 600 seconds
+    assert (await _get(client, "/use?idle=600"))["uid"] == "testuser"  # within 600 seconds
     clock.now += 500
     assert (await _get(client, "/use?idle=5000"))["uid"] == "testuser"  # 500 since last use
     clock.now += 1500
@@ -193,7 +194,7 @@ async def test_changing_a_session_does_not_extend_its_life(clock):
     used = await _get(client, "/use")
     assert used["fullname"] == "Changed"
     assert used["cts"] == created
-    clock.now += 101             # 1001 seconds after the login, 101 after the change
+    clock.now += 101  # 1001 seconds after the login, 101 after the change
     assert (await _get(client, "/use"))["uid"] is None
 
 
@@ -206,15 +207,15 @@ async def test_logging_in_starts_a_new_session(clock):
     created = (await _get(client, "/use"))["cts"]
 
     clock.now += 500
-    await _get(client, "/login?uid=otheruser")                 # another user
+    await _get(client, "/login?uid=otheruser")  # another user
     assert (await _get(client, "/use"))["cts"] == created + 500
 
     clock.now += 500
-    await _get(client, "/login?uid=otheruser&new=1")           # the same user, having authenticated again
+    await _get(client, "/login?uid=otheruser&new=1")  # the same user, having authenticated again
     assert (await _get(client, "/use"))["cts"] == created + 1000
 
     clock.now += 1001
-    await _get(client, "/login?uid=otheruser")                 # the same user, whose session had ended
+    await _get(client, "/login?uid=otheruser")  # the same user, whose session had ended
     assert (await _get(client, "/use"))["cts"] == created + 2001
 
 
@@ -243,7 +244,9 @@ class _Provider:
 async def test_oauth_login_starts_a_new_session(clock, monkeypatch):
     """Logging in again through OAuth, while still logged in, gives a new session with the full lifetime."""
     import urllib.parse
+
     import asfquart.generics
+
     monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", _Provider())
     app = asfquart.construct(f"test_session_limits_{next(_app_counter)}", token_file=None)
     app.cfg.update(MAX_SESSION_AGE=1000, MAX_SESSION_IDLE=0)
@@ -264,7 +267,7 @@ async def test_oauth_login_starts_a_new_session(clock, monkeypatch):
         assert resp.status_code == 200
         clock.now += 900
     assert created[-1] == created[0] + 900
-    clock.now += 50              # 950 seconds after the second login, 1850 after the first
+    clock.now += 50  # 950 seconds after the second login, 1850 after the first
     session = await client.get("/auth", scheme="https")
     assert session.status_code == 200
 
@@ -281,7 +284,7 @@ async def test_session_without_a_creation_time_gets_one(clock):
     assert first["uid"] == "testuser"
     assert first["cts"] == clock.now
     clock.now += 900
-    assert (await _get(client, "/use"))["cts"] == first["cts"]     # saved, not started again
+    assert (await _get(client, "/use"))["cts"] == first["cts"]  # saved, not started again
     clock.now += 101
     assert (await _get(client, "/use"))["uid"] is None
 
@@ -321,6 +324,7 @@ async def test_session_store_applies_its_own_limits(clock):
 
 
 # ---- Saving a change to the session must not fail silently ----
+
 
 @pytest.mark.session
 async def test_reading_marks_a_real_session_as_changed():

@@ -6,7 +6,8 @@ import asfquart.auth
 import asfquart.generics
 import asfquart.session
 
-app = None # needed for hypercorn
+app = None  # needed for hypercorn
+
 
 def my_app() -> asfquart.base.QuartApp:
     # Construct the base app. The oauth gateway at endpoint '/auth' is enabled by default.

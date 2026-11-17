@@ -294,6 +294,7 @@ the application already has, are where to log:
 ```python
 log = logging.getLogger("myapp.audit")
 
+
 class Store:
     async def create(self, hsid, session_data):
         ...  # save the session, as the store does now
@@ -353,6 +354,7 @@ import quart
 app = asfquart.construct("myapp")
 log = logging.getLogger("myapp.audit")
 
+
 @app.after_request
 async def log_logins(response):
     request = quart.request
@@ -363,8 +365,10 @@ async def log_logins(response):
     # for instance, the endpoint shows the session of a user who is logged in already.
     is_callback = (
         request.path == "/auth"
-        and args.get("code") and args.get("state")
-        and not args.get("login") and not args.get("logout")
+        and args.get("code")
+        and args.get("state")
+        and not args.get("login")
+        and not args.get("logout")
     )
     if is_callback:
         # The callback answers 200 only when it has created the session. Read it back all the

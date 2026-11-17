@@ -14,8 +14,20 @@ import asfquart.ldap
 
 VALID = ["testuser", "abc", "ab", "a1", "test-user", "test_user", "user42", "t-_", "t" * 100]
 INVALID = [
-    "", "a", "4user", "-user", "_user", "TestUser", "test user", "test.user", "testuser\n",
-    "testuser,ou=people", "uid=testuser", "test*", "téstuser", "ｔｅｓｔ",
+    "",
+    "a",
+    "4user",
+    "-user",
+    "_user",
+    "TestUser",
+    "test user",
+    "test.user",
+    "testuser\n",
+    "testuser,ou=people",
+    "uid=testuser",
+    "test*",
+    "téstuser",
+    "ｔｅｓｔ",
 ]
 
 
@@ -71,8 +83,12 @@ def test_app_can_change_the_rule_for_one_of_the_two(no_ldap_server, monkeypatch)
     assert not _ldap_accepts("4user")
     monkeypatch.undo()
 
-    monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(
-        aioldap=types.SimpleNamespace(LDAPClient=lambda uri, dn, password: object())), raising=False)
+    monkeypatch.setattr(
+        asfquart.ldap,
+        "asfpy",
+        types.SimpleNamespace(aioldap=types.SimpleNamespace(LDAPClient=lambda uri, dn, password: object())),
+        raising=False,
+    )
     monkeypatch.setattr(asfquart.ldap, "VALID_UID_RE", digits_first)
     assert _ldap_accepts("4user")
     assert not _oauth_accepts("4user")

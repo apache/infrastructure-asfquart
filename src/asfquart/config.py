@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 
 """ASFQuart - Configuration readers"""
-import yaml
+
 import functools
 import inspect
+
+import yaml
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 
 
 async def _read_config(callback, config_filename):
     """Reads a YAML configuration and passes it to the callback"""
-    with open(config_filename, encoding='utf-8') as r:
+    with open(config_filename, encoding="utf-8") as r:  # noqa: ASYNC230 - a small local file, read once
         config_as_dict = yaml.safe_load(r)
     # Some configuration routines may require os to block while the configuration is applied, so
     # we will accept both sync and async callbacks.

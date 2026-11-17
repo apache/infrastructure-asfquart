@@ -72,29 +72,34 @@ The example below shows how to cordon off specific end-points to certain groups 
 ```python
 import asfquart
 from asfquart.auth import Requirements as R
+
 APP = asfquart.APP
+
 
 # URL that requires some sort of ASF auth (oauth, a token, or ldap if the app has basic_auth=True)
 @APP.route("/foo")
 @asfquart.auth.require  # Bare decorator means just require a valid session
 async def view_that_requires_auth():
-   pass
+    pass
+
 
 # URL that requires 2FA (implies oauth since ldap doesn't have 2fa)
 @APP.route("/foo2fa")
 @asfquart.auth.require({R.mfa_protected})
 async def view_that_requires_2fa_auth():
-   pass
+    pass
+
 
 # URL that requires a certain org role (2FA implied??)
 @APP.route("/foorole")
 @asfquart.auth.require({R.member})
 async def view_that_requires_member_role():
-   pass
+    pass
+
 
 # URL that needs at least one of multiple requirements, using the any_of directive
 @APP.route("/multirole")
 @asfquart.auth.require(any_of={R.member, R.chair})  # Either chair or member (or both) required
 async def view_that_requires_some_role():
-   pass
+    pass
 ```

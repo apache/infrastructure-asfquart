@@ -33,10 +33,10 @@ _counter = iter(range(1_000_000))
 def _table_after(sentence):
     """The rows of the first table after the given text on the page, as lists of cells without
     their backticks, and without the header"""
-    lines = TEXT[TEXT.index(sentence):].splitlines()
+    lines = TEXT[TEXT.index(sentence) :].splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith("|"))
     rows = []
-    for line in lines[start + 2:]:
+    for line in lines[start + 2 :]:
         if not line.startswith("|"):
             break
         rows.append([cell.strip().strip("`") for cell in line.strip().strip("|").split(" | ")])
@@ -64,7 +64,9 @@ def _app(**kwargs):
     @app.route("/test-login")
     async def test_login():
         # Random padding, as the session is compressed before it goes into the cookie
-        asfquart.session.write({"uid": "testuser", "padding": secrets.token_hex(int(quart.request.args.get("padding", 0)))})
+        asfquart.session.write(
+            {"uid": "testuser", "padding": secrets.token_hex(int(quart.request.args.get("padding", 0)))}
+        )
         return "ok"
 
     @app.route("/test-whoami")
@@ -86,6 +88,7 @@ async def _whoami(client):
 @pytest.fixture
 def clock(monkeypatch):
     """Lets a test move time on"""
+
     class Clock:
         now = time.time()
 
@@ -122,15 +125,32 @@ def test_every_limit_in_the_code_is_on_the_page():
 
 def test_documented_numbers_are_in_the_tables_of_limits():
     """The tables that describe the limits give the same numbers as the table of values"""
-    for number in ("900 seconds", "10,000", "2,048", "10 seconds", "15 seconds", "30 seconds", "7 days", "60 seconds",
-                   "31 days", "102,400 bytes", "16 MB", "1,000", "500,000 bytes", "3,600 seconds", "5 seconds", "`0600`"):
-        assert number in TEXT[:TEXT.index("## The values")], number
+    for number in (
+        "900 seconds",
+        "10,000",
+        "2,048",
+        "10 seconds",
+        "15 seconds",
+        "30 seconds",
+        "7 days",
+        "60 seconds",
+        "31 days",
+        "102,400 bytes",
+        "16 MB",
+        "1,000",
+        "500,000 bytes",
+        "3,600 seconds",
+        "5 seconds",
+        "`0600`",
+    ):
+        assert number in TEXT[: TEXT.index("## The values")], number
     assert asfquart.session.DEFAULT_MAX_SESSION_IDLE == asfquart.session.DEFAULT_MAX_SESSION_AGE == 7 * DAY
     assert _app().config["MAX_CONTENT_LENGTH"] == 16 * 1024 * 1024
     assert asfquart.base.SECRETS_FILE_MODE == 0o600
 
 
 # ---- Statements on the page that no other test covers ----
+
 
 def test_workflow_timeout_default():
     assert inspect.signature(asfquart.generics.setup_oauth).parameters["workflow_timeout"].default == 900
@@ -190,13 +210,15 @@ async def test_session_too_large_for_a_cookie_is_warned_about(padding, warned):
 def test_sizes_of_the_random_values():
     """A session id is 20 random bytes, and a generated application secret 32"""
     assert len(asfquart.session._generate_sid()) == 27  # 20 bytes, in the URL-safe base64 alphabet
-    assert len(_app().secret_key) == 64                 # 32 bytes, in hex
+    assert len(_app().secret_key) == 64  # 32 bytes, in hex
     assert re.fullmatch(r"[0-9a-f]{64}", _app().secret_key)
 
 
 def _multipart(fields):
     boundary = "limitsboundary"
-    body = "".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n' for name, value in fields)
+    body = "".join(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n' for name, value in fields
+    )
     return (body + f"--{boundary}--\r\n").encode(), f"multipart/form-data; boundary={boundary}"
 
 
@@ -218,11 +240,17 @@ async def test_multipart_form_with_fields_that_are_too_large():
     app.config["PROPAGATE_EXCEPTIONS"] = False
     # The limit is on each field, not on the fields together
     body, content_type = _multipart([("a", "x" * 400_000), ("b", "x" * 400_000)])
-    assert (await app.test_client().post("/test-form", data=body, headers={"Content-Type": content_type})).status_code == 200
+    assert (
+        await app.test_client().post("/test-form", data=body, headers={"Content-Type": content_type})
+    ).status_code == 200
     body, content_type = _multipart([("a", "x" * 600_000)])
-    assert (await app.test_client().post("/test-form", data=body, headers={"Content-Type": content_type})).status_code == 413
+    assert (
+        await app.test_client().post("/test-form", data=body, headers={"Content-Type": content_type})
+    ).status_code == 413
     # And on multipart forms only
-    resp = await app.test_client().post("/test-form", data=b"a=" + b"x" * 600_000, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    resp = await app.test_client().post(
+        "/test-form", data=b"a=" + b"x" * 600_000, headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
     assert resp.status_code == 200
 
 
