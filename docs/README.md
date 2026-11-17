@@ -37,6 +37,7 @@ this, what goes wrong otherwise, and what would have to change to support more.
 
 - [Setting up OAuth](oauth.md)
 - [External services, and what happens when they fail](external-services.md)
+- [Limits: how long, how large and how many](limits.md)
 - [Session handling](sessions.md)
 - [The application secret, and its token file](app-secret.md)
 - [Authentication, Authorization, and Access](auth.md)

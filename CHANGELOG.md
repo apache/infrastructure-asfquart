@@ -124,6 +124,9 @@ Changes in 0.1.13:
    403, a non-callable `token_handler` raises `TypeError`.
 
  Documentation
+ - New page that brings together every limit in asfquart, with its default, what happens when it
+   is reached and how to change it, and what has no limit (`docs/limits.md`, #127). Its tables of
+   values are compared with the code by the tests.
  - New pages: the services an application depends on and what happens when they fail
    (`docs/external-services.md`, #129), and why an application runs as one process
    (`docs/one-process.md`, #160).
