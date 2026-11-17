@@ -14,6 +14,18 @@ Changes in 0.1.14:
    `generics.OAUTH_UID_RE` and `ldap.VALID_UID_RE` are that same pattern, and are unchanged.
  - A session is only created when the OAuth provider's response is a JSON object with a `uid` in the
    form of an ASF user id (`generics.OAUTH_UID_RE`); anything else is a 403 (#132).
+ - Session timeouts for sessions kept in the cookie (#110):
+   - `MAX_SESSION_AGE` now defaults to 7 days (it was unlimited): a session ends 7 days after
+     login. That is when sessions ended before as well, because of the next point. Set it to `0`
+     for no limit.
+   - Using a session now moves its idle timeout on. The time of last use was never saved to the
+     cookie, so the idle timeout ran from the login.
+   - The idle timeout can be set for the whole app with the new `MAX_SESSION_IDLE` option
+     (default 7 days), which `auth.require` then uses. It has an effect when it is less than
+     `MAX_SESSION_AGE`.
+   - `session.write()` and `awrite()` keep the creation time of the session of the user who is
+     logged in, so changing a session no longer extends its maximum lifetime. Pass
+     `new_session=True` after authenticating a user.
  - A bearer token presented when no `token_handler` is registered is no longer printed to stdout; a
    warning without the token is logged instead (#85).
  - The exchange with the OAuth provider states its TLS settings instead of relying on defaults:

@@ -284,7 +284,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pen
                         response="OAuth authentication failed.\n",
                         content_type="text/plain; charset=utf-8"
                     )
-                await asfquart.session.awrite(oauth_data)
+                # The user has just authenticated: this is a new session, with the full lifetime
+                await asfquart.session.awrite(oauth_data, new_session=True)
                 if redirect_uri:  # if called with /auth=login=/foo, redirect to /foo
                     # If SameSite is set, we cannot redirect with a 30x response, as that may invalidate the set-cookie
                     # instead, we issue a 200 Okay with a Refresh header, instructing the browser to immediately go
