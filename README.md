@@ -69,6 +69,12 @@ else:
     app = my_app()
 ```
 
+**An asfquart application runs as one process.** Serve it with one worker, and run one
+instance of it. Logins in progress and the application secret are not shared between
+processes, so more than one worker, or several instances behind a load balancer, will fail in
+ways that are hard to see. [One process](docs/one-process.md) explains what assumes this, and
+what would have to change to lift it.
+
 ## Installation
 
 Create and activate a virtual environment and then install `asfquart` using [uv](https://docs.astral.sh/uv/) or [pip](https://pip.pypa.io):

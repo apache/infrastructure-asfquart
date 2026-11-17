@@ -26,6 +26,7 @@ import secrets
 import os
 import stat
 import logging
+import re
 import signal
 
 import asfpy.twatcher
@@ -55,6 +56,18 @@ SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this us
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
 CONFIG_FNAME = 'config.yaml'
 TOKEN_FNAME = 'apptoken.txt'
+
+# The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
+# letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
+# apache/tooling-trusted-releases, except that AsfUid asks for three characters, and there are ASF
+# users whose id has two.
+#
+# This is the one place where the rule is written. It is used under two more names, for the two
+# places a user id comes into asfquart from outside: generics.OAUTH_UID_RE (the OAuth provider's
+# response) and ldap.VALID_UID_RE (the username of HTTP Basic authentication). Change the rule
+# here and it changes for both. An app that needs another rule for one of the two can assign a
+# pattern of its own to that name.
+ASF_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
 
 class ASFQuartException(Exception):
@@ -130,7 +143,22 @@ class QuartApp(quart.Quart):
                     sys.stderr.write(
                         f"WARNING: Secrets file {_token_filename} has file mode {oct(file_mode)}, we were expecting {oct(SECRETS_FILE_MODE)}\n"
                     )
-                self.secret_key = open(_token_filename, encoding='utf-8').read()
+                with open(_token_filename, encoding='utf-8') as sfile:
+                    self.secret_key = sfile.read()
+                if not self.secret_key.strip():
+                    # An empty file is not a secret: the app may have been stopped between creating
+                    # the file and writing to it. Treat it as missing, and put a new secret in it.
+                    LOGGER.warning(f"Secrets file {_token_filename} is empty; generating a new secret")
+                    self.secret_key = secrets.token_hex()
+                    try:
+                        # Set the mode first, so that the secret is never in a file that others can
+                        # read. If the mode cannot be set, the secret is not written to the file.
+                        os.chmod(_token_filename, SECRETS_FILE_MODE)
+                        with open(_token_filename, "w", encoding='utf-8') as sfile:
+                            sfile.write(self.secret_key)
+                    except OSError:
+                        # Not only a lack of permission: a read-only file system or a full disk too
+                        LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
             else:  # No token file yet, try to write, warn if we cannot
                 self.secret_key = secrets.token_hex()
                 ### TBD: throw the PermissionError once we stabilize how to locate
@@ -146,7 +174,8 @@ class QuartApp(quart.Quart):
                         os.umask(umask_original)  # reset umask to the original setting
                     with open(fd, "w", encoding='utf-8') as sfile:
                         sfile.write(self.secret_key)
-                except PermissionError:
+                except OSError:
+                    # Not only a lack of permission: a read-only file system or a full disk too
                     LOGGER.error(f"Could not open {_token_filename} for writing. Session permanence cannot be guaranteed!")
 
     def runx(self, /,
