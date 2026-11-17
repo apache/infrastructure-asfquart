@@ -119,7 +119,9 @@ class QuartApp(quart.Quart):
 
         # token handler callback for PATs - see docs/sessions.md
         self.token_handler = None  # Default to no PAT handler available.
-        self.basic_auth = True
+        # HTTP Basic authentication checks a password against LDAP, with no second factor, so an
+        # app has to ask for it: construct(..., basic_auth=True). See docs/sessions.md.
+        self.basic_auth = False
         self.sessions = None
 
         if token_file is not None:
@@ -402,7 +404,7 @@ def construct(
     oauth: bool | str = True,
     force_login: bool = True,
     *args,
-    basic_auth: bool = True,
+    basic_auth: bool = False,
     **kw
 ):
     """Construct an ASFQuart web application.
@@ -418,7 +420,11 @@ def construct(
             for instance: asfquart.construct("myapp", oauth="/session").
         force_login: Optional, enforces redirect to the oauth provider when a user
             accesses a restricted page, defaults to ``true``.
-        basic_auth: Optional, enables HTTP Basic authentication via LDAP, defaults to ``true``.
+        basic_auth: Optional, enables HTTP Basic authentication via LDAP, defaults to ``false``.
+            It accepts a user's ASF password with no second factor, so turn it on only for an
+            app that needs it. When off, an ``Authorization: Basic`` header is answered with a 401.
+            It needs the LDAP libraries (the ``aioldap`` extra): without them, ``basic_auth=True``
+            raises a ``RuntimeError``.
     """
 
     # By default, we will set up OAuth and force login redirect on auth failure
@@ -427,6 +433,16 @@ def construct(
     # in the oauth argument, for instance: asfquart.construct("myapp", oauth="/session")
     setup_oauth = oauth
     force_auth_redirect = force_login and setup_oauth
+
+    if basic_auth:
+        # Fail now, and not at the first request with a Basic header: without the LDAP libraries
+        # the app could not do what it was asked to, and nobody would be told.
+        from . import ldap  # here, as ldap imports this module
+        if not ldap.LDAP_SUPPORTED:
+            raise RuntimeError(
+                "basic_auth=True needs the LDAP libraries, which are not installed."
+                ' Install asfquart with the aioldap extra ("asfquart[aioldap]"), or leave basic_auth off.'
+            )
 
     app = QuartApp(name, app_dir, cfg_file, token_file, *args, **kw)
     app.basic_auth = basic_auth

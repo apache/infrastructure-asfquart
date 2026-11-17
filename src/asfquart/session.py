@@ -226,23 +226,28 @@ async def read(expiry_time=None, app=None):
             case "basic":  # Basic LDAP auth - will need to grab info from LDAP
                 if not app.basic_auth:
                     raise base.ASFQuartException("Basic authentication is not enabled", errorcode=401)
-                if ldap.LDAP_SUPPORTED:
-                    try:
-                        auth_user = quart.request.authorization.parameters["username"]
-                        auth_pwd = quart.request.authorization.parameters["password"]
-                        ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
-                        ldap_affiliations = await ldap_client.get_affiliations()
-                        # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
-                        session_dict = {
-                            "uid": auth_user,
-                            "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
-                            "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
-                        }
-                        return ClientSession(session_dict)
-                    except (binascii.Error, ValueError, KeyError) as e:
-                        # binascii/ValueError == bad base64 auth string
-                        # KeyError = missing username or password
-                        raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400) from e
+                if not ldap.LDAP_SUPPORTED:
+                    # construct() refuses basic_auth=True without the LDAP libraries, so this is an
+                    # app that set app.basic_auth itself. It is an error, and not "no session":
+                    # the app was told to accept these credentials and cannot check them.
+                    LOGGER.error("basic_auth is on, but the LDAP libraries (asfquart[aioldap]) are not installed")
+                    raise base.ASFQuartException("Basic authentication is not available", errorcode=500)
+                try:
+                    auth_user = quart.request.authorization.parameters["username"]
+                    auth_pwd = quart.request.authorization.parameters["password"]
+                    ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
+                    ldap_affiliations = await ldap_client.get_affiliations()
+                    # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
+                    session_dict = {
+                        "uid": auth_user,
+                        "pmcs": ldap_affiliations[ldap.DEFAULT_OWNER_ATTR],
+                        "projects": ldap_affiliations[ldap.DEFAULT_MEMBER_ATTR],
+                    }
+                    return ClientSession(session_dict)
+                except (binascii.Error, ValueError, KeyError) as e:
+                    # binascii/ValueError == bad base64 auth string
+                    # KeyError = missing username or password
+                    raise base.ASFQuartException("Invalid Authorization header provided", errorcode=400) from e
             case _: # for match, this is the default
                 raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
