@@ -27,15 +27,17 @@ Changes in 0.1.13:
  OAuth
  - The auth endpoint accepts POST as well as GET, with a `Sec-Fetch-Site` check as light CSRF
    protection; a POST logout answers 204.
- - A logout requested with `GET` is refused with a 403 unless it is the user going to the address:
-   not when another site asked for it (`Sec-Fetch-Site: cross-site`), when a page fetched it for an
-   image, a frame or the like (`Sec-Fetch-Mode` other than `navigate`), or when the browser
-   prefetched it. Before, any page could log a user out, and have the browser clear the app's
-   data, by including the logout address as an image. A logout link in the app itself still
-   works, and a warning is logged once to say that logout should be a `POST`. `GET` logout
-   can be turned off with the new `logout_by_get` argument of `setup_oauth`, or
-   `generics.OAUTH_LOGOUT_BY_GET = False`; it is then a 405. See "Requests that change state" in
-   `docs/oauth.md` (#69).
+ - A logout is accepted only from the app's own pages (`Sec-Fetch-Site: same-origin`). A `POST`
+   logout from another host of the same site, which was accepted, is now a 403; allow it with the
+   new `logout_same_site` argument of `setup_oauth`, or `generics.OAUTH_LOGOUT_SAME_SITE = True`.
+   A logout requested with `GET` had no such check, and now has the same one. It must also be the
+   user going to the address: it is refused when a page fetched it for an image, a frame or the
+   like (`Sec-Fetch-Mode` other than `navigate`), or when the browser prefetched it. Before, any
+   page could log a user out, and have the browser clear the app's data, by including the logout
+   address as an image. A logout link in the app itself still works, and a warning is logged once
+   to say that logout should be a `POST`. `GET` logout can be turned off with the new
+   `logout_by_get` argument of `setup_oauth`, or `generics.OAUTH_LOGOUT_BY_GET = False`; it is
+   then a 405. See "Requests that change state" in `docs/oauth.md` (#69).
  - The `login` and `logout` redirect targets must be local paths (start with `/`, not `//`), and
    may not contain a backslash or control characters: browsers read `/\example.org` as
    `//example.org`, and the login target is sent in a `Refresh` header. A target may be at most

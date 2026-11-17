@@ -1036,6 +1036,13 @@ def _make_app_with_logout_by_get(logout_by_get):
     return app
 
 
+def _make_app_with_logout_same_site(logout_same_site):
+    """An app that calls setup_oauth() itself, to pass logout_same_site"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, logout_same_site=logout_same_site)
+    return app
+
+
 def _add_session_routes(app):
     """Routes to log in without the OAuth provider, and to see whether the browser is still logged in"""
     @app.route("/test-login")
@@ -1068,7 +1075,7 @@ def real_session(monkeypatch):
 
 
 @pytest.mark.generics
-@pytest.mark.parametrize("site", [None, "same-origin", "same-site", "none"])
+@pytest.mark.parametrize("site", [None, "same-origin", "none"])
 @pytest.mark.parametrize("url, status", [("/auth?logout", 200), ("/auth?logout=/goodbye", 302)])
 async def test_get_logout_from_the_app_itself_still_works(real_session, site, url, status):
     """A logout link in the app, a typed address, and a client that sends no Sec-Fetch-Site"""
@@ -1259,3 +1266,105 @@ async def test_get_logout_is_warned_about_once(real_session, caplog):
     assert len(warnings) == 1
     assert warnings[0].levelname == "WARNING"
     assert "OAUTH_LOGOUT_BY_GET" in warnings[0].getMessage()
+
+
+# ---- Logout from another host of the same site (#69) ----
+
+async def _logout(client, method, site):
+    """A logout as a browser would send it from a page of the given kind of site: a link for GET, a form for POST"""
+    headers = _navigation(site) if method == "GET" else {"Sec-Fetch-Site": site}
+    return await client.open("/auth?logout", method=method, scheme="https", headers=headers)
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_logout_from_another_host_of_the_same_site_is_refused(real_session, method):
+    """Every apache.org host is the same site as the app. By default only the app's own pages can log a user out."""
+    app = _make_app()
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await _logout(client, method, "same-site")
+        assert resp.status_code == 403
+        assert "Clear-Site-Data" not in resp.headers
+        assert await _whoami(client) == "testuser"
+        resp = await _logout(client, method, "same-origin")
+        assert resp.status_code == (200 if method == "GET" else 204)
+        assert await _whoami(client) == "nobody"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method, status", [("GET", 200), ("POST", 204)])
+async def test_logout_from_the_same_site_can_be_allowed(real_session, method, status):
+    app = _make_app_with_logout_same_site(True)
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await _logout(client, method, "same-site")
+        assert resp.status_code == status
+        assert resp.headers["Clear-Site-Data"] == '"cache", "cookies", "storage"'
+        assert await _whoami(client) == "nobody"
+
+
+@pytest.mark.generics
+async def test_allowing_the_same_site_allows_nothing_else(real_session):
+    """Another site is still refused, and so is a page of the same site that fetches the address"""
+    app = _make_app_with_logout_same_site(True)
+    _add_session_routes(app)
+    refused = [
+        ("GET", _navigation("cross-site")),
+        ("POST", {"Sec-Fetch-Site": "cross-site"}),
+        ("POST", {"Sec-Fetch-Site": "none"}),
+        ("GET", {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"}),
+        ("GET", {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe"}),
+        ("GET", {**_navigation("same-site"), "Sec-Purpose": "prefetch"}),
+    ]
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        for method, headers in refused:
+            resp = await client.open("/auth?logout", method=method, scheme="https", headers=headers)
+            assert resp.status_code == 403, (method, headers)
+            assert "Clear-Site-Data" not in resp.headers
+        assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_logout_same_site_module_default_and_parameter(real_session, monkeypatch, method):
+    """OAUTH_LOGOUT_SAME_SITE is the default, may be set after construct(), and the parameter wins over it"""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        assert (await _logout(client, method, "same-site")).status_code == 403
+        monkeypatch.setattr(asfquart.generics, "OAUTH_LOGOUT_SAME_SITE", True)
+        assert (await _logout(client, method, "same-site")).status_code != 403
+    app = _make_app_with_logout_same_site(False)
+    async with app.test_app():
+        assert (await _logout(app.test_client(), method, "same-site")).status_code == 403
+    monkeypatch.setattr(asfquart.generics, "OAUTH_LOGOUT_SAME_SITE", False)
+    app = _make_app_with_logout_same_site(True)
+    async with app.test_app():
+        assert (await _logout(app.test_client(), method, "same-site")).status_code != 403
+
+
+@pytest.mark.generics
+async def test_other_posts_from_the_same_site_are_not_affected(real_session):
+    """The stricter rule is for logout. Starting a login by POST from the same site works as before."""
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().post("/auth?login", scheme="https", headers={"Sec-Fetch-Site": "same-site"})
+        assert resp.status_code == 302
+        assert resp.headers["Location"].startswith("https://oauth.apache.org/")
+
+
+@pytest.mark.generics
+async def test_get_logout_turned_off_and_same_site_allowed_together(real_session):
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, logout_by_get=False, logout_same_site=True)
+    async with app.test_app():
+        client = app.test_client()
+        assert (await _logout(client, "GET", "same-site")).status_code == 405
+        assert (await _logout(client, "POST", "same-site")).status_code == 204
