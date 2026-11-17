@@ -118,6 +118,9 @@ Changes in 0.1.13:
  - New pages: the services an application depends on and what happens when they fail
    (`docs/external-services.md`, #129), and why an application runs as one process
    (`docs/one-process.md`, #160).
+ - New page listing every check asfquart makes on its input, where each rule is in the source, and
+   what is left to the application (`docs/input-validation.md`, #125). Its tables of values and
+   examples are compared with the code by the tests.
 
  Other
  - `import asfquart` now imports `asfquart.auth` as well.

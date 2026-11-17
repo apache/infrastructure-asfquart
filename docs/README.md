@@ -43,3 +43,4 @@ this, what goes wrong otherwise, and what would have to change to support more.
 - [Session stores: keeping sessions on the server](session-stores.md)
 - [Simplified EZT templating](templates.md)
 - [Form data and its size limit](forms.md)
+- [Input validation rules: what asfquart checks, and what it leaves to the application](input-validation.md)

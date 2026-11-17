@@ -26,6 +26,9 @@ DEFAULT_MAX_SESSION_IDLE = 86400 * 7
 SESSION_REFRESH_INTERVAL = 60
 
 
+# The checks made here on the session cookie and on the Authorization header are listed, with every
+# other input validation rule, in docs/input-validation.md.
+
 def _session_limit(app, name: str, default: int):
     """A session time limit from the app's config, in seconds. 0 means that there is no limit."""
     value = app.cfg.get(name)

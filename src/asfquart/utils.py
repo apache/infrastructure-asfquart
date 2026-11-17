@@ -12,6 +12,8 @@ import werkzeug.exceptions
 import werkzeug.routing
 import werkzeug.sansio.response
 
+# The checks made here on forms and on file names are listed, with every other input validation
+# rule, in docs/input-validation.md.
 LOGGER = logging.getLogger(__name__)
 
 # The largest form, in bytes, that formdata() will read, unless the app sets MAX_FORM_CONTENT_LENGTH.

@@ -74,6 +74,9 @@ DEFAULT_MAX_PENDING_LOGINS = 10000
 # The longest redirect target (the value of ?login= or ?logout=) that is accepted, in characters
 MAX_REDIRECT_URI_LENGTH = 2048
 
+# The checks made here on requests to the OAuth endpoint, on the OAuth provider's response and on
+# the callback host are listed, with every other input validation rule, in docs/input-validation.md.
+# Keep that page in step with the code: tests/input_validation.py compares them.
 LOGGER = logging.getLogger(__name__)
 
 
