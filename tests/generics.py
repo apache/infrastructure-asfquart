@@ -1053,6 +1053,13 @@ async def _whoami(client):
     return (await (await client.get("/test-whoami", scheme="https")).get_data()).decode()
 
 
+def _navigation(site):
+    """The headers a browser sends when the user goes to an address in a window or tab"""
+    if site is None:
+        return {}
+    return {"Sec-Fetch-Site": site, "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+
 @pytest.fixture
 def real_session(monkeypatch):
     """Other tests replace quart.session; these need the session cookie"""
@@ -1071,8 +1078,7 @@ async def test_get_logout_from_the_app_itself_still_works(real_session, site, ur
         client = app.test_client()
         await client.get("/test-login", scheme="https")
         assert await _whoami(client) == "testuser"
-        headers = {"Sec-Fetch-Site": site} if site else {}
-        resp = await client.get(url, scheme="https", headers=headers)
+        resp = await client.get(url, scheme="https", headers=_navigation(site))
         assert resp.status_code == status
         assert resp.headers["Clear-Site-Data"] == '"cache", "cookies", "storage"'
         assert await _whoami(client) == "nobody"
@@ -1088,12 +1094,62 @@ async def test_get_logout_from_another_site_is_refused(real_session, method, url
     async with app.test_app():
         client = app.test_client()
         await client.get("/test-login", scheme="https")
-        resp = await client.open(url, method=method, scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        resp = await client.open(url, method=method, scheme="https", headers=_navigation("cross-site"))
         assert resp.status_code == 403
         assert "Clear-Site-Data" not in resp.headers
         assert "Location" not in resp.headers
         assert "Set-Cookie" not in resp.headers
         assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("site", ["same-origin", "same-site", "cross-site"])
+@pytest.mark.parametrize("mode, dest", [
+    ("no-cors", "image"),       # <img src="/auth?logout">
+    ("no-cors", "script"),
+    ("cors", "empty"),          # fetch()
+    ("navigate", "iframe"),     # a frame is a navigation, but not one the user made
+    ("navigate", "embed"),
+    (None, None),               # Sec-Fetch-Site alone
+])
+async def test_get_logout_from_within_a_page_is_refused(real_session, site, mode, dest):
+    """A page cannot log the user out by fetching the address, not even one on the same site:
+    every host under apache.org is the same site as the app."""
+    app = _make_app()
+    _add_session_routes(app)
+    headers = {"Sec-Fetch-Site": site}
+    if mode:
+        headers.update({"Sec-Fetch-Mode": mode, "Sec-Fetch-Dest": dest})
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await client.get("/auth?logout", scheme="https", headers=headers)
+        assert resp.status_code == 403
+        assert "Clear-Site-Data" not in resp.headers
+        assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("prefetch", [
+    {"Sec-Purpose": "prefetch"},
+    {"Sec-Purpose": "prefetch;prerender"},
+    {"Sec-Purpose": "prefetch;anonymous-client-ip"},
+    {"Purpose": "prefetch"},
+    {"X-Moz": "prefetch"},
+])
+@pytest.mark.parametrize("site", [None, "same-origin"])
+async def test_prefetched_get_logout_is_refused(real_session, caplog, prefetch, site):
+    """A browser fetching the logout link ahead of time does not log the user out"""
+    app = _make_app()
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await client.get("/auth?logout", scheme="https", headers={**_navigation(site), **prefetch})
+        assert resp.status_code == 403
+        assert "Clear-Site-Data" not in resp.headers
+        assert await _whoami(client) == "testuser"
+    assert "requested with GET" not in caplog.text
 
 
 @pytest.mark.generics
@@ -1121,9 +1177,8 @@ async def test_get_logout_can_be_turned_off(real_session, method, site):
     async with app.test_app():
         client = app.test_client()
         await client.get("/test-login", scheme="https")
-        headers = {"Sec-Fetch-Site": site} if site else {}
         for url in ("/auth?logout", "/auth?logout=/goodbye"):
-            resp = await client.open(url, method=method, scheme="https", headers=headers)
+            resp = await client.open(url, method=method, scheme="https", headers=_navigation(site))
             assert resp.status_code == 405
             assert resp.headers["Allow"] == "POST"
             assert "Clear-Site-Data" not in resp.headers
@@ -1195,7 +1250,8 @@ async def test_get_logout_is_warned_about_once(real_session, caplog):
     async with app.test_app():
         client = app.test_client()
         await client.post("/auth?logout", scheme="https")
-        await client.get("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        await client.get("/auth?logout", scheme="https", headers=_navigation("cross-site"))
+        await client.get("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"})
         assert "requested with GET" not in caplog.text
         for _ in range(3):
             await client.get("/auth?logout", scheme="https")
