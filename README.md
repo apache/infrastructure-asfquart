@@ -90,7 +90,10 @@ uv pip install asfquart
 pip install asfquart
 ```
 
-Note: Adding the `[aioldap]` extra will install optional dependencies for LDAP support that will
+Note: HTTP Basic authentication against LDAP is off by default, and an application that wants it
+passes `basic_auth=True` to `asfquart.construct()`
+(see [docs/sessions.md](docs/sessions.md#http-basic-authentication)). It needs the `[aioldap]`
+extra, which will install optional dependencies for LDAP support that will
 require additional [system dependencies](https://github.com/noirello/bonsai?tab=readme-ov-file#requirements-for-building):
 
 ```shell

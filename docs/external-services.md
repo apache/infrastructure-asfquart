@@ -79,12 +79,13 @@ LDAP is used only for requests that carry an `Authorization: Basic` header, and 
 - the request has no session cookie for the app. A session cookie is looked at first, and the
   `Authorization` header is then not read at all, even if the session in the cookie turns out
   to have expired;
-- the app was constructed with `basic_auth=True` (the default); and
+- the app was constructed with `basic_auth=True` (it is off by default); and
 - the `aioldap` extra is installed (`asfquart[aioldap]`).
 
-Without the extra, such a request is treated as having no session. With `basic_auth=False`
-it is answered with `401 Basic authentication is not enabled`. In neither case is LDAP
-contacted.
+Without `basic_auth=True` such a request is answered with `401 Basic authentication is not
+enabled`, and LDAP is not contacted. With it, and without the extra, the app does not start:
+`asfquart.construct()` raises a `RuntimeError`. See
+[HTTP Basic authentication](sessions.md#http-basic-authentication).
 
 For each such request asfquart connects to LDAP as the user, which checks the password, and
 looks up the projects that the user is a member or owner of. The lookup is cached in memory

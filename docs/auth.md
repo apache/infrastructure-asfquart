@@ -74,7 +74,7 @@ import asfquart
 from asfquart.auth import Requirements as R
 APP = asfquart.APP
 
-# URL that requires some sort of ASF auth (oauth, ldap)
+# URL that requires some sort of ASF auth (oauth, a token, or ldap if the app has basic_auth=True)
 @APP.route("/foo")
 @asfquart.auth.require  # Bare decorator means just require a valid session
 async def view_that_requires_auth():

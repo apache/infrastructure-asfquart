@@ -86,6 +86,46 @@ more than an hour, and two authentication factors. asfquart does not claim AAL2.
 timeouts can be configured as above, but the second factor is a matter for the ASF's OAuth
 provider and not for asfquart.
 
+## HTTP Basic authentication
+
+asfquart can accept an `Authorization: Basic` header with a user's ASF id and password, and
+check them against LDAP. **This is off by default.** An application that needs it asks for
+it when it is constructed, and has to be installed with the LDAP libraries
+(`asfquart[aioldap]`):
+
+```python
+app = asfquart.construct("myapp", basic_auth=True)
+```
+
+`basic_auth=True` fails when the application is constructed, with a `RuntimeError`, if the
+LDAP libraries are not installed: an application that has been told to accept passwords and
+cannot check them should not start. What is checked is that the libraries are there. Whether
+the LDAP server can be reached is not checked at startup, since it may be down for a while
+without that being a reason for the application not to start; see
+[External services](external-services.md#ldap) for what happens to a request then.
+
+Without `basic_auth=True`, a request with an `Authorization: Basic` header that reaches
+`asfquart.session.read()`, as every endpoint under `@asfquart.auth.require` does, is answered
+with `401 Basic authentication is not enabled`.
+
+Think before turning it on:
+
+- **It is a password with no second factor.** A login through the OAuth provider is subject
+  to multi-factor authentication. Basic authentication is not, so it is a way round it. A
+  session made this way has `mfa` set to `False`, and does not meet
+  `Requirements.mfa_protected`.
+- **The application sees the password**, on every request.
+- **Every request is checked against LDAP**, and so is every wrong guess. asfquart does not
+  limit how often a client may try, so that has to be done in front of the application.
+- **The session has less in it**: `uid`, `committees` and `projects`. `isMember`, `isChair`
+  and `isRoot` are not looked up, so the requirements that read them are not met.
+
+For a script or a service, a token is the better fit; see the next section. For how the
+username and password are checked, and what happens when LDAP cannot be reached, see
+[External services](external-services.md#ldap).
+
+In asfquart 0.1.12 and earlier, Basic authentication was always on.
+
 ## Role account management via declared PAT handler
 Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler
 is declared:

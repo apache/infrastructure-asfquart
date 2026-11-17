@@ -104,7 +104,7 @@ def test_valid_username_is_accepted(ldap_clients, username):
 async def test_basic_auth_with_invalid_username(monkeypatch, ldap_clients, username):
     """Through the Authorization header: a 403, as for a wrong password, and no LDAP connection"""
     monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
-    app = asfquart.construct("ldap_username", token_file=None)
+    app = asfquart.construct("ldap_username", token_file=None, basic_auth=True)
     credentials = base64.b64encode(f"{username}:password".encode()).decode()
     async with app.test_request_context("/", headers={"Authorization": f"Basic {credentials}"}):
         with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
@@ -118,7 +118,7 @@ async def test_basic_auth_with_invalid_username(monkeypatch, ldap_clients, usern
 async def test_basic_auth_with_empty_password(monkeypatch, ldap_clients):
     """Through the Authorization header: "testuser:" is a 403, and no LDAP connection"""
     monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
-    app = asfquart.construct("ldap_empty_password", token_file=None)
+    app = asfquart.construct("ldap_empty_password", token_file=None, basic_auth=True)
     credentials = base64.b64encode(b"testuser:").decode()
     async with app.test_request_context("/", headers={"Authorization": f"Basic {credentials}"}):
         with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
@@ -369,3 +369,120 @@ async def test_wrong_password_for_a_cached_user_is_not_a_use(directory, monkeypa
         await _lookup("alice")
     assert excinfo.value.errorcode == 403
     assert list(asfquart.ldap.LDAP_CACHE) == ["alice", "bob"]
+
+
+# ---- HTTP Basic authentication is off unless the app asks for it ----
+
+BASIC_CREDENTIALS = "Basic " + base64.b64encode(b"testuser:password").decode()
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("kwargs", [{}, {"basic_auth": False}])
+@pytest.mark.parametrize("ldap_supported", [True, False])
+async def test_basic_auth_is_off_by_default(monkeypatch, ldap_clients, kwargs, ldap_supported):
+    """Without basic_auth=True a Basic header is a 401, whether or not the LDAP libraries are there, and LDAP is not contacted"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", ldap_supported)
+    app = asfquart.construct("ldap_basic_off", token_file=None, **kwargs)
+    assert app.basic_auth is False
+    async with app.test_request_context("/", headers={"Authorization": BASIC_CREDENTIALS}):
+        with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+            await asfquart.session.read()
+    assert excinfo.value.errorcode == 401
+    assert excinfo.value.message == "Basic authentication is not enabled"
+    assert ldap_clients == []
+
+
+@pytest.mark.auth
+async def test_basic_auth_off_is_a_401_response(monkeypatch, ldap_clients):
+    """Through a protected endpoint: a 401 in plain text, and no redirect to the OAuth login"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
+    app = asfquart.construct("ldap_basic_off_response", token_file=None)
+
+    @app.route("/protected")
+    @asfquart.auth.require
+    async def protected():
+        return "in"
+
+    resp = await app.test_client().get("/protected", headers={"Authorization": BASIC_CREDENTIALS})
+    assert resp.status_code == 401
+    assert (await resp.get_data()).decode() == "Basic authentication is not enabled"
+    assert "Location" not in resp.headers
+    assert ldap_clients == []
+
+
+@pytest.mark.auth
+async def test_basic_auth_when_asked_for(monkeypatch):
+    """With basic_auth=True a Basic header is checked against LDAP, and makes a session"""
+    seen = []
+
+    class FakeLDAPClient:
+        def __init__(self, username, password):
+            seen.append((username, password))
+
+        async def get_affiliations(self):
+            return {asfquart.ldap.DEFAULT_OWNER_ATTR: ["httpd"], asfquart.ldap.DEFAULT_MEMBER_ATTR: ["httpd", "tomcat"]}
+
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
+    monkeypatch.setattr(asfquart.ldap, "LDAPClient", FakeLDAPClient)
+    app = asfquart.construct("ldap_basic_on", token_file=None, basic_auth=True)
+    assert app.basic_auth is True
+    async with app.test_request_context("/", headers={"Authorization": BASIC_CREDENTIALS}):
+        session = await asfquart.session.read()
+    assert seen == [("testuser", "password")]
+    assert session.uid == "testuser"
+    assert session.committees == ["httpd"]
+    assert session.projects == ["httpd", "tomcat"]
+    assert session.mfa is False  # a password alone: Requirements.mfa_protected is not met
+
+
+@pytest.mark.auth
+def test_basic_auth_without_the_ldap_libraries_fails_at_startup(monkeypatch):
+    """Asking for Basic authentication where it cannot work is an error when the app is constructed"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", False)
+    with pytest.raises(RuntimeError, match=r"basic_auth=True needs the LDAP libraries.*asfquart\[aioldap\]"):
+        asfquart.construct("ldap_basic_on_no_libraries", token_file=None, basic_auth=True)
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("kwargs", [{}, {"basic_auth": False}])
+def test_no_ldap_libraries_are_needed_with_basic_auth_off(monkeypatch, kwargs):
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", False)
+    assert asfquart.construct("ldap_basic_off_no_libraries", token_file=None, **kwargs).basic_auth is False
+
+
+@pytest.mark.auth
+async def test_basic_auth_turned_on_later_without_the_ldap_libraries(monkeypatch, ldap_clients, caplog):
+    """An app that sets app.basic_auth itself is not checked at startup. A Basic header is then a 500
+    that is explained in the log, and not a request with no session."""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", False)
+    app = asfquart.construct("ldap_basic_on_later", token_file=None)
+    app.basic_auth = True
+
+    @app.route("/protected")
+    @asfquart.auth.require
+    async def protected():
+        return "in"
+
+    client = app.test_client()
+    resp = await client.get("/protected", headers={"Authorization": BASIC_CREDENTIALS})
+    assert resp.status_code == 500
+    assert (await resp.get_data()).decode() == "Basic authentication is not available"
+    assert "LDAP libraries (asfquart[aioldap]) are not installed" in caplog.text
+    assert "password" not in caplog.text and "dGVzdHVzZXI6cGFzc3dvcmQ=" not in caplog.text
+    assert ldap_clients == []
+    # A request without a Basic header is not affected
+    assert (await client.get("/protected", headers={"x-no-redirect": "1"})).status_code != 500
+
+
+@pytest.mark.auth
+async def test_other_credentials_do_not_depend_on_basic_auth():
+    """A bearer token works as before with Basic authentication off"""
+    app = asfquart.construct("ldap_basic_off_bearer", token_file=None)
+    app.token_handler = lambda token: {"uid": "roleaccount"} if token == "good" else None
+    async with app.test_request_context("/", headers={"Authorization": "Bearer good"}):
+        assert (await asfquart.session.read()).uid == "roleaccount"
+
+
+def test_quartapp_has_basic_auth_off():
+    """An app made with QuartApp directly, and not construct(), has it off too"""
+    assert asfquart.base.QuartApp("ldap_quartapp", token_file=None).basic_auth is False
