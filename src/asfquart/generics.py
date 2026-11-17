@@ -41,6 +41,12 @@ OAUTH_CALLBACK_HOST = None
 # can set this to False, and a GET logout is then a 405. See docs/oauth.md.
 OAUTH_LOGOUT_BY_GET = True
 
+# The default for setup_oauth()'s logout_same_site. A logout is accepted from the app's own pages
+# (the same origin). With True it is also accepted from the same site, which is every host that
+# shares the app's registered domain: for an app at apache.org, every other apache.org host. Set it
+# only if users have to be able to log out from a link or a form on another such host.
+OAUTH_LOGOUT_SAME_SITE = False
+
 # The pending login is tied to the browser that started it, via this cookie.
 # SameSite=Lax is required: the callback is a top level navigation from the
 # OAuth provider, and a Strict cookie is not sent when the provider is on a
@@ -116,23 +122,28 @@ async def _exchange_code(session, code):
 _warned_get_logout = False  # so the warning below is logged once per process, not per logout
 
 
-def _refuse_get_logout(logout_by_get):
-    """Says whether a logout that was requested with GET is to be refused: returns the response to
-    send, or None if the logout may go ahead. A refused logout leaves the session alone and clears
-    nothing in the browser. logout_by_get is setup_oauth()'s argument of that name."""
+def _refuse_logout(logout_by_get, logout_same_site):
+    """Says whether a logout request is to be refused: returns the response to send, or None if the
+    logout may go ahead. A refused logout leaves the session alone and clears nothing in the
+    browser. The arguments are setup_oauth()'s arguments of those names."""
     global _warned_get_logout
-    # OAUTH_LOGOUT_BY_GET is read here, not at setup, so one set late still applies
-    if not (logout_by_get if logout_by_get is not None else OAUTH_LOGOUT_BY_GET):
+    # The module settings are read here, not at setup, so that one set late still applies
+    if logout_by_get is None:
+        logout_by_get = OAUTH_LOGOUT_BY_GET
+    if logout_same_site is None:
+        logout_same_site = OAUTH_LOGOUT_SAME_SITE
+    headers = quart.request.headers
+    by_get = quart.request.method != "POST"
+    if by_get and not logout_by_get:
         return quart.Response(
             status=405,
             response="Log out with a POST request.\n",
             headers={"Allow": "POST"},
             content_type="text/plain; charset=utf-8"
         )
-    headers = quart.request.headers
     # A browser that is fetching the page ahead of time, in case the user goes there, has not been
     # asked to log anyone out. Sec-Purpose is the standard header; the other two are older.
-    if (
+    if by_get and (
         headers.get("Sec-Purpose", "").startswith("prefetch")
         or headers.get("Purpose") == "prefetch"
         or headers.get("X-Moz") == "prefetch"
@@ -142,15 +153,17 @@ def _refuse_get_logout(logout_by_get):
     # headers is let through, as is a client that is not a browser.
     site = headers.get("Sec-Fetch-Site")
     if site is not None:
-        # Not from another site. "none" is the user's own doing: a typed address or a bookmark.
-        allowed = site in ("same-origin", "same-site", "none")
-        # And it is the user going to the address in a window or tab, not a page fetching it for an
-        # image, a script or a frame. "same-site" is every host that shares the app's registered
-        # domain, so without this any of them could log the user out from within a page.
-        allowed = allowed and headers.get("Sec-Fetch-Mode") == "navigate" and headers.get("Sec-Fetch-Dest") == "document"
+        # From the app's own pages, or from the same site if the app allows that
+        allowed = site == "same-origin" or (site == "same-site" and logout_same_site)
+        if by_get:
+            # "none" is the user's own doing: a typed address or a bookmark. A form cannot be that.
+            allowed = allowed or site == "none"
+            # And it is the user going to the address in a window or tab, not a page fetching it
+            # for an image, a script or a frame
+            allowed = allowed and headers.get("Sec-Fetch-Mode") == "navigate" and headers.get("Sec-Fetch-Dest") == "document"
         if not allowed:
             return quart.Response(status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8")
-    if not _warned_get_logout:
+    if by_get and not _warned_get_logout:
         _warned_get_logout = True
         LOGGER.warning(
             "A logout was requested with GET. A logout changes state, so it should be a POST: use a form"
@@ -241,6 +254,7 @@ def setup_oauth(
     max_pending_logins: typing.Optional[int] = None,
     callback_host: typing.Optional[str] = None,
     logout_by_get: typing.Optional[bool] = None,
+    logout_same_site: typing.Optional[bool] = None,
 ):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
@@ -259,8 +273,10 @@ def setup_oauth(
     "ProxyPreserveHost On" in your httpd config if proxying.
 
     logout_by_get says whether a logout may be requested with GET as well as with POST
-    (OAUTH_LOGOUT_BY_GET if not given, which is True). With False a GET logout is a 405. Either
-    way, a logout that another site asked for is refused; see docs/oauth.md.
+    (OAUTH_LOGOUT_BY_GET if not given, which is True). With False a GET logout is a 405.
+    logout_same_site says whether a logout is accepted from other hosts of the same site, and not
+    only from the app's own pages (OAUTH_LOGOUT_SAME_SITE if not given, which is False). A logout
+    that another site asked for is always refused; see docs/oauth.md.
     """
 
     host = callback_host if callback_host is not None else OAUTH_CALLBACK_HOST
@@ -348,10 +364,9 @@ def setup_oauth(
 
         # Log out
         elif logout_uri or quart.request.query_string == b"logout":
-            if quart.request.method != "POST":
-                refusal = _refuse_get_logout(logout_by_get)
-                if refusal is not None:
-                    return refusal
+            refusal = _refuse_logout(logout_by_get, logout_same_site)
+            if refusal is not None:
+                return refusal
             await asfquart.session.aclear()
             if logout_uri and not _is_local_redirect(logout_uri):
                 response = quart.Response(

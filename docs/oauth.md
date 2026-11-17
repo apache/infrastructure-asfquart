@@ -180,27 +180,29 @@ Log out with a form, not with a link:
 
 A `POST` to `/auth?logout` answers `204`, and one to `/auth?logout=/foo` redirects to `/foo`.
 
-A logout by `GET` is still accepted, because many applications have a logout link. It is
-accepted only when it is the user going to the address, though. A request that another site
-asked for, or that a page made for itself, is refused with a `403`: the session is left alone
-and the browser is not told to clear anything. asfquart goes by the headers that browsers
-send with a request.
+A logout is accepted from the application's own pages, and refused with a `403` when
+another site asked for it: the session is left alone and the browser is not told to clear
+anything. asfquart goes by the headers that browsers send with a request.
 
 `Sec-Fetch-Site` says where the request came from:
 
 | `Sec-Fetch-Site` | Meaning | `POST` logout | `GET` logout |
 |---|---|---|---|
-| `same-origin`, `same-site` | The application's own page, or one on the same site | Accepted | Accepted, if a navigation |
+| `same-origin` | A page of the application itself | Accepted | Accepted, if a navigation |
+| `same-site` | A page on another host of the same site | Refused, unless allowed (below) | Refused, unless allowed (below) |
 | `none` | The user typed the address or used a bookmark | Refused | Accepted, if a navigation |
 | `cross-site` | A page on another site: a link, a form, an image | Refused | Refused |
 | not sent | An old browser, or a client that is not a browser | Accepted | Accepted |
 
-For a `GET`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest` must also say that the request is a
-navigation in a window or tab (`navigate` and `document`): the user followed a link or
-entered the address. A page that fetches the address for an image, a script, a frame or with
-`fetch()` is refused, wherever the page is. That matters because "the same site" is wider
-than it sounds: every host under `apache.org` is the same site as every other, so a page on
-any of them could otherwise log the user out by including the logout address as an image.
+"The same site" is wider than it sounds. It is every host that shares the application's
+registered domain, so for an application at `myapp.apache.org` it is every other host under
+`apache.org`. That is why it is not accepted by default.
+
+A logout by `GET` is still accepted, because many applications have a logout link. For a
+`GET`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest` must also say that the request is a navigation
+in a window or tab (`navigate` and `document`): the user followed a link or entered the
+address. A page that fetches the address for an image, a script, a frame or with `fetch()`
+is refused, even a page of the application itself.
 
 A `GET` that a browser makes ahead of time, in case the user follows the link (a prefetch,
 marked `Sec-Purpose: prefetch`), is refused as well.
@@ -210,16 +212,33 @@ an image. The session cookie is not sent with such a request, but the answer to 
 carries a `Clear-Site-Data` header, which tells the browser to drop the application's
 cookies, cache and storage whether the cookie was sent or not.
 
-What the checks do not stop is a page on another `apache.org` host sending the user's
-window to the logout address, by a link or by a `POST` form. The user sees that happen. Only
-turning `GET` logout off, below, narrows it further, and then only to a form.
-
 Two things follow for an application that keeps its logout link:
 
-- A logout link on a page of another site no longer works. `apache.org` hosts count as the
-  same site as each other, so a link from one to another does.
-- A page that is reached from another site and answers with a redirect to `/auth?logout` is
-  refused as well: the browser still reports the request as coming from the other site.
+- A logout link on a page of another host no longer works, unless that host is on the same
+  site and the application allows it, as described next.
+- A page that is reached from another host and answers with a redirect to `/auth?logout` is
+  refused as well: the browser still reports the request as coming from the other host.
+
+#### Logging out from another host of the same site
+
+If users have to be able to log out of the application from a link or a form on another
+host of the same site, set `logout_same_site=True` when calling `setup_oauth()`. Its default
+is `asfquart.generics.OAUTH_LOGOUT_SAME_SITE`, so an application that uses
+`asfquart.construct()` can set that instead:
+
+```python
+import asfquart
+import asfquart.generics
+
+asfquart.generics.OAUTH_LOGOUT_SAME_SITE = True
+app = asfquart.construct("myapp")
+```
+
+This applies to `POST` and to `GET` logouts alike. A `GET` must still be a navigation. Any
+page on any host of the site can then send a user's window to the logout address, or submit
+a form to it, so allow it only when there is such a link or form to support.
+
+#### Turning `GET` logout off
 
 To refuse `GET` logouts altogether, set `logout_by_get=False` when calling `setup_oauth()`.
 Its default is `asfquart.generics.OAUTH_LOGOUT_BY_GET`, so an application that uses
