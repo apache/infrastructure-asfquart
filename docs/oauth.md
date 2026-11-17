@@ -117,6 +117,157 @@ header rather than a 30x response, so that `SameSite` session cookies are kept).
   navigation from the provider and browsers do not send `Strict` cookies on it. Deployments
   where the provider and the app share a site may set it to `"Strict"`.
 
+## Logging logins
+
+asfquart does not keep an audit trail of logins. It logs a warning when the exchange with
+the OAuth provider fails, so that the failure can be diagnosed (see above), but it does not
+log successful logins, or who logged in from where. Which decisions to record, in what
+format, and where the record goes are for the application to decide.
+
+There are two places where an application can record them. Use the session store if the
+application has one, and the hook for what the store does not see.
+
+| | Session store | `after_request` hook |
+|---|---|---|
+| Needs | Server-side sessions (`app.sessions`) | Nothing |
+| Successful logins | Yes | Yes |
+| Logouts | Yes | No |
+| Failed logins | No: they never reach the store | Yes |
+| How it knows | asfquart calls it once the login has succeeded | It works it out from the request and the response |
+
+### In the session store
+
+An application that keeps its sessions in a store of its own (`app.sessions`) is told about
+each login: asfquart calls the store's `create()` when the OAuth callback has succeeded, and
+not before. It calls `destroy()` when the user logs out. Those two methods, in the store that
+the application already has, are where to log:
+
+```python
+log = logging.getLogger("myapp.audit")
+
+class Store:
+    async def create(self, hsid, session_data):
+        ...  # save the session, as the store does now
+        log.info("login succeeded: uid=%s remote=%s", session_data.get("uid"), quart.request.remote_addr)
+
+    async def destroy(self, hsid):
+        session = ...  # find the session and delete it, as the store does now
+        if session is not None:
+            log.info("logout: uid=%s", session.uid)
+```
+
+This shows where the two log lines go, and nothing more. It is not a store to copy: the rest
+of a store (`validate()`, and `replace()` or `register()` if the application uses
+`asfquart.session.areplace()`) is left out, and is the application's own.
+
+What to know about it:
+
+- Nothing in the request decides whether `create()` is called, so a record of a login cannot
+  be made up by sending the application a request. That is the advantage over the hook below.
+- Log after the session has been saved, and log nothing that can fail. asfquart puts the
+  session in the cookie only once `create()` has returned, so an error raised after saving
+  leaves a session in the store that no cookie leads to. That is why the line above reads the
+  user id with `session_data.get("uid")`, and not with `session_data["uid"]`.
+- `create()` is called by `asfquart.session.awrite()`. The OAuth callback calls that after a
+  successful login, and so does the application whenever its own code calls `awrite()`. If
+  the application changes a session that way, the old session is destroyed and a new one
+  created, which this logging would record as a logout and a login.
+- `asfquart.session.areplace()` changes a session without calling `create()`. What it does
+  call depends on the store. If the store has a `replace()` method, that is all it calls, and
+  nothing is logged. If it has not, it calls `destroy()` for the old session and then
+  `register()` for the new one, and this logging would record a logout that did not happen.
+  A store with neither method cannot be used with `areplace()` at all.
+- `destroy()` is also called for the previous session of a user who logs in again without
+  logging out first. This logging then records a logout followed by a login.
+- Do not log the `hsid`. It is a hash of the session id, but it is still what finds the
+  session.
+- `quart.request.remote_addr` is the address of the reverse proxy when there is one. The
+  address of the client is then in a header such as `X-Forwarded-For`, which is only to be
+  trusted in the conditions set out at the end of the next section; otherwise it is whatever
+  the client sent.
+- A login that fails never gets as far as the store. To record those, add the hook below.
+
+### In an `after_request` hook
+
+An application without a session store, where the session is kept in the cookie, has no
+`create()` to log in. It can record logins with an `after_request` hook, which also sees the
+logins that fail. An application that logs successful logins in its store, and adds this hook
+for the failed ones, should leave the `log.info` line out of the hook, or each successful
+login is recorded twice.
+
+```python
+import logging
+
+import asfquart
+import quart
+
+app = asfquart.construct("myapp")
+log = logging.getLogger("myapp.audit")
+
+@app.after_request
+async def log_logins(response):
+    request = quart.request
+    args = request.args
+    # Only the callback from the OAuth provider is a login decision. The OAuth endpoint treats a
+    # request as the callback when it has a code and a state, neither of them empty, and is not
+    # a login or logout request. Anything else must not be logged as a login: with an empty code,
+    # for instance, the endpoint shows the session of a user who is logged in already.
+    is_callback = (
+        request.path == "/auth"
+        and args.get("code") and args.get("state")
+        and not args.get("login") and not args.get("logout")
+    )
+    if is_callback:
+        # The callback answers 200 only when it has created the session. Read it back all the
+        # same, and count the login as failed if it is not there.
+        session = await asfquart.session.read() if response.status_code == 200 else None
+        if session is not None:
+            log.info("login succeeded: uid=%s remote=%s", session.uid, request.remote_addr)
+        else:
+            log.warning("login failed: status=%s remote=%s", response.status_code, request.remote_addr)
+    return response
+```
+
+How this works:
+
+- The callback from the OAuth provider is a request to the OAuth endpoint with a `code` and
+  a `state`, neither of them empty, and without `login` or `logout`. Every other request to
+  the endpoint (starting a login, logging out, showing the current session) is not a login
+  decision. The test for the callback has to be this exact: anybody can send any query string,
+  and `/auth?code=&state=` from a user who is logged in already answers `200` with their
+  session, which a looser test would record as a login that never happened.
+- The hook does not look at the method of the request. The OAuth endpoint takes the callback
+  by `POST` as well as by `GET`, and a login that is completed by `POST` is still a login. A
+  hook that recorded `GET` requests only would let one go by unrecorded.
+- The hook calls `asfquart.session.read()` without naming an app, and that is deliberate.
+  The OAuth endpoint writes the session for `asfquart.APP`, the application that was
+  constructed last, and `read()` with no app looks in the same place. A process is expected
+  to hold one application, and then there is nothing to choose. If a process does construct
+  more than one, passing the hook's own `app` to `read()` would look for the session where
+  the endpoint did not put it, and a login that worked would be recorded as one that failed.
+- The callback answers `200` when the login succeeded, and by then the session has been
+  created, so the hook can read the user id from it. The hook still allows for the session
+  not being there, and then records a failed login, so that it cannot raise an error of its
+  own on a response that was otherwise fine. The callback answers `403` when the login was
+  refused: the state was unknown, expired, already used or from another browser, or the OAuth
+  provider did not accept the code. See the callback consistency rules above.
+- Do not log the `code` or the `state`, and so do not log the query string of the callback.
+  The `code` is a credential until it has been exchanged.
+- Behind a reverse proxy, `request.remote_addr` is the address of the proxy. Use the header
+  that your proxy sets (`X-Forwarded-For`, say) if you want the address of the client, but
+  only if the proxy overwrites that header and the application cannot be reached except
+  through the proxy. Otherwise the header is whatever the client chose to send, and an audit
+  trail built on it can be forged. This goes for the session store above as well. See the
+  security notes in
+  [MDN's page on `X-Forwarded-For`](https://developer.mozilla.org/docs/Web/HTTP/Headers/X-Forwarded-For).
+- If the OAuth endpoint is not at `/auth`, compare with the path that was given to
+  `asfquart.construct(..., oauth=...)` or `setup_oauth()`.
+
+The hook has to follow the rules of the OAuth endpoint, so `tests/oauth_logging.py` runs it
+against the endpoint, including the requests that must not be logged. If the endpoint changes,
+those tests say that this section has to change with it. The same file has a small store
+with the two log lines above in it, and checks what they record.
+
 ## Multi-instance limitation
 
 OAuth state parameters are stored in a process-local dictionary in `src/asfquart/generics.py`:
