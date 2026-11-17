@@ -41,6 +41,11 @@ Changes in 0.1.13:
    (10,000) are kept, the oldest being dropped first. `setup_oauth` takes a `max_pending_logins`
    argument. A warning says how many were dropped (#99, #95).
  - The OAuth code is percent-encoded before it is sent to the OAuth provider (#88).
+ - The OAuth code is sent to the provider in a `POST` body rather than the URL of a `GET`, so it
+   stays out of access logs. `generics.OAUTH_URL_CALLBACK` no longer takes a `%s`. A value that
+   still has one is sent as a `GET` with a warning - except the old default, which gets the `POST`.
+   Redirects from the provider aren't followed (#96).
+ - Responses to an OAuth endpoint URL with a code in it are sent with `Referrer-Policy: no-referrer`.
  - The original URL carried through an OAuth login redirect is percent-encoded, and a trailing `?`
    from an empty query string is dropped.
  - A session is only created when the OAuth provider's response is a JSON object with a `uid` in the

@@ -25,9 +25,12 @@ import asfquart  # implies .session
 # - OAUTH_URL_INIT: where the browser is sent to log in. asfquart does not connect to it itself.
 # - OAUTH_URL_CALLBACK: where asfquart exchanges the code from the callback for the user's details,
 #   once per login. If it cannot be reached or refuses the code, that login fails and no session is made.
+#   The code is POSTed in a form body, to keep it out of URLs that get logged (#96). A value with a
+#   %s for the code, as it used to need, is still sent as a GET - see docs/external-services.md.
 # Sessions that already exist do not depend on either. See docs/external-services.md.
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
-OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
+OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc"
+_OLD_DEFAULT_CALLBACK = OAUTH_URL_CALLBACK + "?code=%s"  # the default before #96
 DEFAULT_OAUTH_URI = "/auth"
 
 # The default for setup_oauth()'s callback_host, e.g. "https://myapp.apache.org" (#93)
@@ -81,6 +84,28 @@ def _callback_host(pinned):
     # is an error - falling back to the Host header would quietly undo the pin.
     _check_callback_host(host)
     return host
+
+
+_warned_legacy_callback = False  # so the warning below is logged once per process, not per login
+
+
+async def _exchange_code(session, code):
+    """Sends the code from the callback to the OAuth provider, and returns its response"""
+    global _warned_legacy_callback
+    url = OAUTH_URL_CALLBACK
+    if url == _OLD_DEFAULT_CALLBACK:
+        url = url.removesuffix("?code=%s")  # apps that copied the old default get the POST too
+    if "%s" not in url:
+        # Don't follow redirects - aiohttp would resend as a GET with no body, losing the code
+        return await session.post(url, data={"code": code}, allow_redirects=False)
+    if not _warned_legacy_callback:
+        _warned_legacy_callback = True
+        LOGGER.warning(
+            "OAUTH_URL_CALLBACK has a %s for the code, so the code is sent in the URL of a GET. "
+            "Remove the query string to send it in a POST body instead."
+        )
+    # The code comes from the query string, so it is quoted before it goes into ours
+    return await session.get(url % urllib.parse.quote(code, safe=""))
 
 
 def _browser_digest(browser):
@@ -210,6 +235,14 @@ def setup_oauth(
             last_eviction_warning = time.time()
             evicted_since_warning = 0
 
+    @app.after_request
+    async def no_referrer_for_code(response):
+        # A URL with a code in it shouldn't be passed on as a Referer. Set here rather than in
+        # the endpoint so it covers every response, errors included.
+        if quart.request.path == uri and "code" in quart.request.args:
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     @app.route(uri, methods=["GET", "POST"])
     async def oauth_endpoint():
         # lightweight CSRF protection.
@@ -299,8 +332,7 @@ def setup_oauth(
                 try:
                     connector = aiohttp.TCPConnector(ssl=_oauth_ssl_context())
                     async with aiohttp.client.ClientSession(timeout=OAUTH_TIMEOUT, connector=connector) as session:
-                        # The code comes from the query string, so it is quoted before it goes into ours
-                        rv = await session.get(OAUTH_URL_CALLBACK % urllib.parse.quote(code, safe=""))
+                        rv = await _exchange_code(session, code)
                         if rv.status == 200:
                             oauth_data = await rv.json()
                             problem = _oauth_data_problem(oauth_data)

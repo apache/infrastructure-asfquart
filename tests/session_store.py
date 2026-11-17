@@ -67,7 +67,7 @@ class _Provider:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url):
+    async def post(self, url, **kwargs):
         return self
 
     async def json(self):
