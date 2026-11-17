@@ -132,18 +132,18 @@ finished session object, not a dictionary, and it does not call `create()`.
   `AttributeError`, and by then the user's session has been removed: the request is a `500`
   and the user is logged out. The other functions work without the two methods.
 
-`areplace()` passes on whatever object the application gives it, and does not check it. An
-application that calls `areplace()` with a plain dictionary puts a plain dictionary in the
-store, so a store's own methods should not assume more about a session than they need.
+`areplace()` refuses a session object with no `uid` attribute, such as a plain dictionary,
+with a `TypeError`, and leaves the user's session as it was. So a store can rely on
+`session.uid` for any session passed to `replace()` or `register()`.
 
 ## The session object
 
 What `validate()` returns is handed to the application as the session. asfquart itself asks
 two things of it:
 
-- The `@asfquart.auth.require` decorator reads attributes from it: `isMember`, `isChair`,
-  `isRoot`, `isRole`, `mfa` and `committees`, depending on the requirement. An application's
-  own code will expect `uid` and the rest as well.
+- It needs a `uid`, and the attribute for each `@asfquart.auth.require` requirement the
+  application uses - see [what a requirement reads](auth.md#what-a-requirement-reads-from-the-session).
+  `asfquart.session.SessionProtocol` is the full list.
 - The OAuth endpoint shows the session to a logged-in user who asks for it (`/auth`). For
   that the object must be a dictionary, or have a `model_dump()` method that returns one.
 
@@ -213,10 +213,9 @@ class MemoryStore:
 
     @staticmethod
     def _uid(entry):
-        """Whose session this is. A session may be a dictionary or an object with attributes."""
+        """Whose session this is"""
         _created, _last_used, data, session = entry
-        kept = data if session is None else session
-        return kept.get("uid") if isinstance(kept, dict) else getattr(kept, "uid", None)
+        return data.get("uid") if session is None else session.uid
 
     def purge(self):
         """Removes the sessions that have ended. Returns how many there were."""

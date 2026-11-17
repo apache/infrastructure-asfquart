@@ -6,6 +6,8 @@ Changes in 0.1.13:
    session id. Use the new `session.awrite()`, `session.aclear()` and `session.areplace()` with such
    a store; the sync `write()` and `clear()` raise when one is configured. The interface is
    documented in `docs/session-stores.md`.
+ - `session.areplace()` refuses a session object with no `uid` attribute, such as a plain dict,
+   with a `TypeError`. The user's existing session is left alone.
  - Session timeouts for sessions kept in the cookie (#110):
    - Maximum session lifetime: the new `MAX_SESSION_AGE` config option (seconds) ends a session
      that many seconds after it was created, regardless of activity. It defaults to 7 days, which
@@ -55,6 +57,11 @@ Changes in 0.1.13:
  - `auth.require` no longer drops its first argument when `all_of` is given as well: the two are
    combined. Anything that is not a requirement is a `TypeError` when the endpoint is defined, and
    `auth.requirements_to_iter` is deprecated (#43, #45).
+ - `auth.Requirements.mfa_enabled` is now `mfa_protected`. The old name still works (#44).
+ - Requirements work with any session object that has the attributes they read, not only a
+   `ClientSession` - with a session store it may be something else. The attributes are listed in
+   `session.SessionProtocol`, and `auth.require` raises a `TypeError` naming the attribute if a
+   session is missing one (#44).
  - `basic_auth` parameter when constructing a `QuartApp` (default `True`); when off, an
    `Authorization: Basic` header is answered with 401 instead of an LDAP lookup.
  - A username for basic authentication must have the form of an ASF user id, and the password may
