@@ -36,7 +36,9 @@ On `/auth?login` or `/auth?login=/foo`, asfquart:
    - it contains no control characters (CR, LF, tab, NUL and so on), because the target is
      later sent in a `Refresh` header, and because browsers drop tabs and newlines from a URL.
      This covers every character in a Unicode "C" category (control, format, private use,
-     unassigned), and the line and paragraph separators U+2028 and U+2029.
+     unassigned), and the line and paragraph separators U+2028 and U+2029,
+   - it is no longer than 2,048 characters (`asfquart.generics.MAX_REDIRECT_URI_LENGTH`),
+     because the target of a login is kept in memory until the login completes or expires.
 
    The same rule applies to the target of `/auth?logout=/foo`.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
@@ -161,11 +163,36 @@ Pending logins that are never completed do not accumulate:
 
 - Records that have passed the workflow timeout are removed whenever a login starts or a
   callback arrives.
-- At most 10,000 logins are pending at one time, which takes about 3 MB. When one more
-  starts, the oldest is dropped to make room. If the user it belonged to then completes it,
-  they get the `403` above and have to start again. A warning is logged when this happens
-  (`More than 10000 OAuth logins are pending`), at most once a minute. In normal use the limit
-  is never reached; it is there for a client that starts logins without end.
+- At most 10,000 logins are pending at one time. When one more starts, the oldest is dropped
+  to make room. If the user it belonged to then completes it, they get the `403` above and
+  have to start again. In normal use the limit is never reached; it is there for a client
+  that starts logins without end.
+- The memory that 10,000 pending logins take depends on their redirect targets, which is why
+  those have a maximum length: roughly 3 MB when the targets are short, as they usually are,
+  and roughly 24 MB if every one is as long as it may be.
+- A warning is logged when logins are dropped for want of room, at most once a minute:
+  `More than 10000 OAuth logins are pending; 37 dropped since the last warning, oldest first.`
+  The number is how many were dropped since the warning before. One warning with a small
+  number is a burst. A warning every minute, with large numbers, is pressure that lasts, and
+  may be an attack.
+
+#### A flood of logins
+
+Somebody who starts logins fast enough can push real ones out before their users come back
+from the OAuth provider. With the default limit, and a login that takes half a minute to
+complete, that needs more than 300 new logins a second, kept up for as long as the attack is
+to last. A real login that is pushed out fails with the `403` above, and works when tried
+again once the flood has stopped.
+
+No limit on a table of pending logins avoids this altogether. The alternative, refusing new
+logins while the table is full, would let the same flood lock everybody out for the whole
+workflow timeout after it had stopped. Dropping the oldest ends the damage when the flood
+ends.
+
+asfquart does not limit how fast one client may start logins. It cannot tell clients apart
+reliably: behind a reverse proxy every request comes from the proxy's address. The place to
+limit the rate of requests to `/auth?login` is the reverse proxy, which does know the client.
+Raising `max_pending_logins` also raises the rate that a flood has to keep up.
 
 To use another limit, either set `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` before
 calling `asfquart.construct()`, or set the endpoint up yourself:

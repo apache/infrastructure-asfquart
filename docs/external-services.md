@@ -92,7 +92,8 @@ saves the lookup but not the connection.
 
 The cache holds the lookups of at most 1,000 users (`asfquart.ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES`).
 Lookups that are more than an hour old are removed whenever somebody authenticates, and when
-the cache is full the oldest lookup makes way for the newest. A user whose lookup is gone is
+the cache is full the lookup that has gone longest without being used makes way for the
+newest, so a user who keeps coming back keeps their place. A user whose lookup is gone is
 not refused: it is made again on their next request. Only a lookup that succeeded is cached,
 so the cache does not grow with attempts to log in.
 

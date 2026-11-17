@@ -707,3 +707,86 @@ def test_limit_on_pending_logins_must_be_positive(limit):
     app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
     with pytest.raises(ValueError):
         asfquart.generics.setup_oauth(app, max_pending_logins=limit)
+
+
+# ---- The redirect target of a login is kept in memory, so its length is limited ----
+
+@pytest.mark.generics
+@pytest.mark.parametrize("action", ["login", "logout"])
+async def test_redirect_target_has_a_maximum_length(action):
+    limit = asfquart.generics.MAX_REDIRECT_URI_LENGTH
+    assert limit == 2048
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        longest = "/" + "a" * (limit - 1)
+        assert (await client.get(f"/auth?{action}={longest}", scheme="https")).status_code == 302
+        too_long = await client.get(f"/auth?{action}={longest}a", scheme="https")
+        assert too_long.status_code == 400
+        assert "Invalid redirect" in (await too_long.get_data()).decode()
+
+
+@pytest.mark.generics
+async def test_too_long_redirect_target_is_not_kept():
+    """A login with a target that is refused leaves nothing in memory."""
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        resp = await app.test_client().get("/auth?login=/" + "a" * 5000, scheme="https")
+        assert resp.status_code == 400
+    assert _pending_states_of(app) == {}
+
+
+# ---- The warning says how many logins were dropped ----
+
+def _pending_warnings(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "asfquart.generics" and "pending" in r.getMessage()]
+
+
+@pytest.mark.generics
+async def test_warning_counts_the_logins_that_were_dropped(monkeypatch, caplog):
+    """One warning a minute at most, and each says how many logins were dropped since the one before:
+    a single burst is one warning with a small number, and lasting pressure is one every minute."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        client = app.test_client()
+        for _ in range(11):                                  # the eleventh drops one
+            await client.get("/auth?login", scheme="https")
+        assert _pending_warnings(caplog) == [
+            "More than 10 OAuth logins are pending; 1 dropped since the last warning, oldest first."
+            " A dropped login fails if its user completes it"
+        ]
+        for _ in range(50):                                  # within the minute: counted, not logged
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 1
+        clock.now += 61
+        await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 2
+        assert "; 51 dropped since the last warning" in _pending_warnings(caplog)[1]
+        # A warning goes out with the first drop after a minute; later drops wait for the next one
+        clock.now += 61
+        for _ in range(3):
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 3
+        assert "; 1 dropped since the last warning" in _pending_warnings(caplog)[2]
+        clock.now += 61
+        await client.get("/auth?login", scheme="https")
+        assert "; 3 dropped since the last warning" in _pending_warnings(caplog)[3]
+
+
+@pytest.mark.generics
+async def test_no_warning_once_nothing_is_being_dropped(monkeypatch, caplog):
+    """The count is not carried over into a warning when the drops have stopped and the rest expired."""
+    clock = _Clock()
+    monkeypatch.setattr(asfquart.generics, "time", clock)
+    app = _make_app_with_limit(10)
+    async with app.test_app():
+        client = app.test_client()
+        for _ in range(11):
+            await client.get("/auth?login", scheme="https")
+        assert len(_pending_warnings(caplog)) == 1
+        clock.now += 1000                                    # all of them expire
+        for _ in range(5):
+            await client.get("/auth?login", scheme="https")  # only expired logins are removed now
+        assert len(_pending_warnings(caplog)) == 1

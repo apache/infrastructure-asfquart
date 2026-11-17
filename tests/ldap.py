@@ -263,3 +263,109 @@ async def test_failed_ldap_lookup_is_not_cached(directory, monkeypatch):
             await _lookup(f"guess{index}")
         assert excinfo.value.errorcode == 403
     assert asfquart.ldap.LDAP_CACHE == {}
+
+
+@pytest.mark.auth
+async def test_cached_user_is_not_failed_by_an_eviction_during_the_password_check(directory, monkeypatch):
+    """While a cached user's password is being checked, another request can push their lookup out of
+    the cache. The first request already has the lookup, and must answer with it, not with a 500."""
+    import asyncio
+    monkeypatch.setattr(asfquart.ldap, "DEFAULT_LDAP_CACHE_MAX_ENTRIES", 1)
+    await _lookup("alice")                                   # alice is cached
+    hold = asyncio.Event()
+    waiting = asyncio.Event()
+    plain_client = directory.LDAPClient
+
+    def slow_for_alice(uri, dn, password):
+        client = plain_client(uri, dn, password)
+        if not dn.startswith("uid=alice,"):
+            return client
+        connection = client.connect
+
+        class HeldOpen(connection):
+            async def __aenter__(self):
+                waiting.set()
+                await hold.wait()                            # the bind does not come back yet
+                return await super().__aenter__()
+
+        return types.SimpleNamespace(connect=HeldOpen)
+
+    monkeypatch.setattr(directory, "LDAPClient", slow_for_alice)
+    alice = asyncio.ensure_future(_lookup("alice"))          # cache hit; now checking the password
+    await waiting.wait()
+    await _lookup("bob")                                     # the cache holds one: alice goes
+    assert "alice" not in asfquart.ldap.LDAP_CACHE
+    hold.set()
+    assert await alice == {"member": ["testproject"], "owner": []}
+
+
+@pytest.mark.auth
+async def test_ldap_cache_drops_the_least_recently_used(directory, monkeypatch):
+    """When the cache is full, the lookup to go is the one that has gone longest without being used,
+    and not the one that was made first: a user who keeps coming back keeps their place."""
+    monkeypatch.setattr(asfquart.ldap, "DEFAULT_LDAP_CACHE_MAX_ENTRIES", 3)
+    for username in ("alice", "bob", "carol"):
+        await _lookup(username)
+        directory.clock.now += 1
+    await _lookup("alice")                                   # alice is back: a cache hit, and a use
+    assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "carol", "alice"]
+    searches = len(directory.searches)
+    await _lookup("dave")                                    # the cache is full: bob goes, not alice
+    assert list(asfquart.ldap.LDAP_CACHE) == ["carol", "alice", "dave"]
+    await _lookup("alice")
+    assert len(directory.searches) == searches + 1           # only dave was looked up; alice was still cached
+
+
+@pytest.mark.auth
+async def test_using_a_lookup_does_not_make_it_last_longer(directory):
+    """Being used keeps a lookup from being dropped for want of room. It does not keep it past its hour."""
+    await _lookup("alice")
+    for _ in range(5):
+        directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL / 6
+        await _lookup("alice")                               # used every ten minutes
+    assert len(directory.searches) == 1
+    directory.clock.now += asfquart.ldap.DEFAULT_LDAP_CACHE_TTL / 6 + 1
+    await _lookup("alice")                                   # an hour after the lookup: made again
+    assert len(directory.searches) == 2
+
+
+@pytest.mark.auth
+async def test_expired_lookup_is_removed_wherever_it_is_in_the_order(directory):
+    """An expired lookup is found even when a recently used one is in front of it."""
+    await _lookup("alice")
+    directory.clock.now += 1800
+    await _lookup("bob")
+    directory.clock.now += 1000
+    await _lookup("alice")                                   # used: alice is now behind bob in the order
+    assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "alice"]
+    directory.clock.now += 900                               # alice's lookup is 3700 seconds old, bob's 1900
+    await _lookup("carol")
+    assert list(asfquart.ldap.LDAP_CACHE) == ["bob", "carol"]
+
+
+@pytest.mark.auth
+async def test_wrong_password_for_a_cached_user_is_not_a_use(directory, monkeypatch):
+    """A failed password check answers 403, and does not move the cached lookup up the order."""
+    monkeypatch.setattr(asfquart.ldap, "DEFAULT_LDAP_CACHE_MAX_ENTRIES", 2)
+    await _lookup("alice")
+    await _lookup("bob")
+    plain_client = directory.LDAPClient
+
+    def refuse_alice(uri, dn, password):
+        if not dn.startswith("uid=alice,"):
+            return plain_client(uri, dn, password)
+
+        class Refused:
+            async def __aenter__(self):
+                raise PermissionError("invalid credentials")
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return types.SimpleNamespace(connect=Refused)
+
+    monkeypatch.setattr(directory, "LDAPClient", refuse_alice)
+    with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+        await _lookup("alice")
+    assert excinfo.value.errorcode == 403
+    assert list(asfquart.ldap.LDAP_CACHE) == ["alice", "bob"]

@@ -21,10 +21,12 @@ Changes in 0.1.14:
  - OAuth logins that are started and never completed no longer stay in memory until a restart: they
    are removed once they have expired, and no more than `generics.DEFAULT_MAX_PENDING_LOGINS`
    (10,000) are kept, the oldest being dropped first. `setup_oauth` takes a `max_pending_logins`
-   argument (#99, #95).
+   argument. A warning says how many were dropped (#99, #95).
+ - A `login` or `logout` redirect target may be at most 2,048 characters
+   (`generics.MAX_REDIRECT_URI_LENGTH`); a longer one is a 400.
  - The cache of LDAP lookups no longer keeps expired entries: they are removed whenever a lookup is
    made, and the cache holds at most `ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` (1,000) users, the
-   oldest lookup being dropped first (#95).
+   least recently used lookup being dropped first (#95).
 
 Changes in 0.1.13:
  - `auth.require` accepts the classmethods of a `Requirements` subclass, so an app can add its own

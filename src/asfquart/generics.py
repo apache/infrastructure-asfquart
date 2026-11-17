@@ -48,8 +48,12 @@ OAUTH_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10, soc
 OAUTH_UID_RE = asfquart.base.ASF_UID_RE
 
 # How many logins may be pending (started, and not yet completed or expired) at one time. Each
-# takes a few hundred bytes. When there are more, the oldest are dropped, and fail if completed.
+# takes a few hundred bytes, plus its redirect target. When there are more, the oldest are dropped,
+# and fail if completed.
 DEFAULT_MAX_PENDING_LOGINS = 10000
+
+# The longest redirect target (the value of ?login= or ?logout=) that is accepted, in characters
+MAX_REDIRECT_URI_LENGTH = 2048
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +65,10 @@ def _browser_digest(browser):
 def _is_local_redirect(uri: str) -> bool:
     """Tests whether a login/logout redirect target is a path on this site, and safe to place
     in a Location or Refresh header."""
+    # Not longer than a path has reason to be. The target of a login is kept in memory until the
+    # login completes or expires, so without a limit a client could have a lot kept for it.
+    if len(uri) > MAX_REDIRECT_URI_LENGTH:
+        return False
     # Must be a path, and not a protocol-relative URL (//example.org)
     if (not uri.startswith("/")) or uri.startswith("//"):
         return False
@@ -147,18 +155,23 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pen
     if max_pending_logins < 1:
         raise ValueError("max_pending_logins must be at least 1")
     last_eviction_warning = 0.0
+    evicted_since_warning = 0
 
     def purge_pending_states(max_size):
         """Keeps pending_states within bounds, and says so in the log when that costs somebody their login"""
-        nonlocal last_eviction_warning
-        evicted = _purge_pending_states(pending_states, workflow_timeout, max_size)
-        # At most one warning a minute: when this happens at all, it is likely to happen a lot
-        if evicted and time.time() - last_eviction_warning >= 60:
-            last_eviction_warning = time.time()
+        nonlocal last_eviction_warning, evicted_since_warning
+        evicted_since_warning += _purge_pending_states(pending_states, workflow_timeout, max_size)
+        # At most one warning a minute: when this happens at all, it is likely to happen a lot. Each
+        # warning says how many were dropped since the one before, which tells a single burst (one
+        # warning, a small number) from pressure that lasts (a warning every minute, large numbers).
+        if evicted_since_warning and time.time() - last_eviction_warning >= 60:
             LOGGER.warning(
-                "More than %d OAuth logins are pending; the oldest are being dropped and will fail",
-                max_pending_logins,
+                "More than %d OAuth logins are pending; %d dropped since the last warning, oldest first."
+                " A dropped login fails if its user completes it",
+                max_pending_logins, evicted_since_warning,
             )
+            last_eviction_warning = time.time()
+            evicted_since_warning = 0
 
     @app.route(uri, methods=["GET", "POST"])
     async def oauth_endpoint():
