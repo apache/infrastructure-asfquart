@@ -16,6 +16,20 @@ async def submit():
     return {"received": sorted(data)}
 ```
 
+The three are merged in that order, so a field of a form replaces a query string argument of
+the same name, and a field of a JSON object replaces both.
+
+## JSON
+
+A JSON body has to be an object, as only an object has fields to add to the dictionary. For
+any other JSON value (a list, a string, a number, `true`, `false` or `null`), and for a body
+that is not JSON at all, `formdata()` raises werkzeug's `BadRequest`. An endpoint does not
+need to do anything about it: left alone, it becomes a `400` response.
+
+A request is JSON if its content type is `application/json`, or one that ends in `+json`.
+The size limit below is for forms, and does not apply to a JSON body, which is limited by
+`MAX_CONTENT_LENGTH` alone.
+
 ## Size limit
 
 Forms have a size limit of their own, so that it can be small without also limiting other

@@ -293,3 +293,72 @@ async def test_formdata_form_limit_does_not_apply_to_json():
                             path="/form?q=zzz")
     assert resp.status_code == 200
     assert await resp.get_json() == {"a": 5000, "n": 5, "q": 3}
+
+
+# ---- JSON bodies ----
+
+def _json_app():
+    app = quart.Quart(f"test_formdata_{next(_form_counter)}")
+
+    @app.route("/data", methods=["POST", "PUT"])
+    async def data():
+        return await asfquart.utils.formdata()
+
+    return app
+
+
+async def _send_json(app, body, method="POST", path="/data"):
+    return await app.test_client().open(path, method=method, data=body, headers={"Content-Type": "application/json"})
+
+
+@pytest.mark.utils
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+async def test_formdata_reads_a_json_object(method):
+    resp = await _send_json(_json_app(), b'{"a": [1, 2], "b": null, "q": "body"}', method=method, path="/data?q=query&r=1")
+    assert resp.status_code == 200
+    assert await resp.get_json() == {"a": [1, 2], "b": None, "q": "body", "r": "1"}
+
+
+@pytest.mark.utils
+async def test_formdata_reads_an_empty_json_object():
+    resp = await _send_json(_json_app(), b"{}", path="/data?q=query")
+    assert resp.status_code == 200
+    assert await resp.get_json() == {"q": "query"}
+
+
+@pytest.mark.utils
+@pytest.mark.parametrize("body", [b"[1, 2]", b"[]", b'[["a", 1]]', b'["ab"]', b'"text"', b"5", b"0", b"1.5", b"true", b"false", b"null"])
+async def test_formdata_refuses_json_that_is_not_an_object(body):
+    """A list, a string, a number, a boolean or null is a 400, as a body that is not JSON is. It was a 500,
+    or for some values (a list of pairs) was taken to be fields."""
+    app = _json_app()
+    app.config["PROPAGATE_EXCEPTIONS"] = False  # an error in the endpoint would be a 500, not raised here
+    resp = await _send_json(app, body, path="/data?q=query")
+    assert resp.status_code == 400
+    assert "must be an object" in (await resp.get_data()).decode()
+
+
+@pytest.mark.utils
+@pytest.mark.parametrize("body", [b"{not json", b"", b"{'a': 1}"])
+async def test_formdata_refuses_a_body_that_is_not_json(body):
+    app = _json_app()
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    resp = await _send_json(app, body)
+    assert resp.status_code == 400
+
+
+@pytest.mark.utils
+async def test_formdata_json_error_is_raised_for_the_caller():
+    """The endpoint may catch it, as it may the one for a form that is too large"""
+    app = quart.Quart(f"test_formdata_{next(_form_counter)}")
+
+    @app.route("/data", methods=["POST"])
+    async def data():
+        try:
+            return await asfquart.utils.formdata()
+        except werkzeug.exceptions.BadRequest as e:
+            return {"refused": e.description}, 422
+
+    resp = await _send_json(app, b"[1, 2]")
+    assert resp.status_code == 422
+    assert await resp.get_json() == {"refused": "The JSON body of this request must be an object."}

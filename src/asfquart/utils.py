@@ -92,7 +92,10 @@ async def formdata():
 
     A form (as opposed to JSON) that is larger than the MAX_FORM_CONTENT_LENGTH setting is not read.
     werkzeug's RequestEntityTooLarge is raised instead, as quart does for a body over MAX_CONTENT_LENGTH,
-    and unless the caller catches it the response is a 413."""
+    and unless the caller catches it the response is a 413.
+
+    A JSON body must be an object. For any other JSON value, as for a body that is not JSON,
+    werkzeug's BadRequest is raised, and unless the caller catches it the response is a 400."""
     form_data = dict()
     form_data.update(quart.request.args.to_dict())  # query string args
     # Check the size of a form before it is parsed.
@@ -111,6 +114,10 @@ async def formdata():
         form_data.update(xform.to_dict())
     if quart.request.is_json:  # JSON data from a PUT?
         xjson = await quart.request.json
+        # Only an object has fields to add to the dictionary. Any other JSON value (a list, a
+        # string, a number, null) is the client's mistake, as a body that is not JSON at all is.
+        if not isinstance(xjson, dict):
+            raise werkzeug.exceptions.BadRequest("The JSON body of this request must be an object.")
         form_data.update(xjson)
     return form_data
 

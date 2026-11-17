@@ -88,6 +88,9 @@ Changes in 0.1.13:
    (default 100 KB) with a 413, before the form is parsed. The limit is separate from quart's
    `MAX_CONTENT_LENGTH`, and the lower of the two applies. A request without a `Content-Length`
    header is no longer a 500. See `docs/forms.md` (#131).
+ - `utils.formdata()` answers a JSON body that is not an object (a list, a string, a number, `null`)
+   with a 400. It was a 500, and a few such values, a list of pairs for one, were taken to be
+   fields.
  - `use_template` passes a `Response` returned by the handler (a redirect, say) through untouched,
    instead of handing it to the template as the data dictionary.
  - Every error response from asfquart is `text/plain; charset=utf-8`.
