@@ -40,5 +40,6 @@ this, what goes wrong otherwise, and what would have to change to support more.
 - [Session handling](sessions.md)
 - [The application secret, and its token file](app-secret.md)
 - [Authentication, Authorization, and Access](auth.md)
+- [Session stores: keeping sessions on the server](session-stores.md)
 - [Simplified EZT templating](templates.md)
 - [Form data and its size limit](forms.md)
