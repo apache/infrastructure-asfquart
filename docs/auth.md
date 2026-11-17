@@ -12,7 +12,8 @@ At present, asfquart features the following auth requirements:
 - `asfquart.auth.Requirements.pmc_member`: User must be a PMC member of any top-level project
 - `asfquart.auth.Requirements.chair`: User must be a chair of one or more projects
 - `asfquart.auth.Requirements.root`: User must be a member of infra-root
-- `asfquart.auth.Requirements.mfa_enabled`: User must be logged in using a method that requires multi-factor authentication
+- `asfquart.auth.Requirements.mfa_protected`: User must have logged in with multi-factor authentication
+  (previously `mfa_enabled`, which still works)
 - `asfquart.auth.Requirements.roleacct`: User is a service account
 
 These requirements can be passed to the `asfquart.auth.require` decorator to create a list of requirements
@@ -45,6 +46,27 @@ Requirements are checked when the endpoint is defined. Anything that is not a me
 `asfquart.auth.Requirements` (or of a subclass of it) raises a `TypeError`, as does using a
 bare `@asfquart.auth.require` on a function that is not `async`.
 
+### What a requirement reads from the session
+
+Requirements don't check the session's class. Without a session store the session is an
+`asfquart.session.ClientSession`, which has everything below. With a session store
+(`app.sessions`) it's whatever the store returns, so that object needs the attribute for each
+requirement the application uses:
+
+| Requirement | Reads |
+|---|---|
+| `committer` | Nothing - any session passes |
+| `member` | `isMember` |
+| `pmc_member` | `committees` |
+| `chair` | `isChair` |
+| `root` | `isRoot` |
+| `mfa_protected` | `mfa` |
+| `roleacct` | `isRole` |
+
+These, plus `uid`, make up `asfquart.session.SessionProtocol`, which a type checker can check
+a session class against. If a session is missing an attribute that a requirement reads,
+`@asfquart.auth.require` raises a `TypeError` naming it and the endpoint isn't run.
+
 The example below shows how to cordon off specific end-points to certain groups of users:
 
 ```python
@@ -60,7 +82,7 @@ async def view_that_requires_auth():
 
 # URL that requires 2FA (implies oauth since ldap doesn't have 2fa)
 @APP.route("/foo2fa")
-@asfquart.auth.require({R.mfa_enabled})
+@asfquart.auth.require({R.mfa_protected})
 async def view_that_requires_2fa_auth():
    pass
 

@@ -336,30 +336,26 @@ async def test_replace_does_not_bring_back_a_session_that_has_timed_out(clock):
 
 
 @pytest.mark.session
-async def test_areplace_with_a_plain_dictionary():
-    """areplace() does not check what it is given, so the store has to cope with a dictionary."""
+async def test_areplace_refuses_a_session_without_a_uid():
+    """A plain dictionary has no uid attribute, so it's refused - and the session the user had is kept"""
     store = MemoryStore()
     app = _app(store=store, oauth=False)
 
     @app.route("/replace-with-dict")
     async def replace_with_dict():
-        await asfquart.session.areplace({"uid": "alice", "note": "a plain dictionary"})
-        return "ok"
+        try:
+            await asfquart.session.areplace({"uid": "alice", "note": "a plain dictionary"})
+        except TypeError as e:
+            return str(e)
+        return "replaced"
 
-    @app.route("/raw")
-    async def raw():
-        session = await asfquart.session.read()
-        return {"type": type(session).__name__ if session is not None else None, "session": session}
-
-    alice, bob = app.test_client(), app.test_client()
+    alice = app.test_client()
     await alice.get("/write?uid=alice", scheme="https")
-    await bob.get("/write?uid=bob", scheme="https")
-    await alice.get("/replace-with-dict", scheme="https")
-    assert (await _json(alice, "/raw")) == {"type": "dict", "session": {"uid": "alice", "note": "a plain dictionary"}}
-    assert store.purge() == 0
+    before = (await _json(alice, "/whoami"))["cookie"]
+    resp = await alice.get("/replace-with-dict", scheme="https")
+    assert "SessionProtocol" in (await resp.get_data()).decode()
+    assert (await _json(alice, "/whoami")) == {"uid": "alice", "cookie": before}
     assert store.revoke("alice") == 1
-    assert (await _json(alice, "/raw")) == {"type": None, "session": None}
-    assert (await _json(bob, "/whoami"))["uid"] == "bob"
 
 
 @pytest.mark.session

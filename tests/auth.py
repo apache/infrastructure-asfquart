@@ -85,7 +85,7 @@ async def test_mfa_auth():
 
     app = asfquart.construct("foobar", token_file=None)
 
-    @asfquart.auth.require(R.mfa_enabled)
+    @asfquart.auth.require(R.mfa_protected)
     async def requires_mfa():
         pass
 
@@ -99,9 +99,25 @@ async def test_mfa_auth():
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NO_MFA)):
         await requires_mfa()
 
+    # Test with MFA explicitly False, should fail.
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "mfa": False}})
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NO_MFA)):
+        await requires_mfa()
+
+    # Test with a truthy value that isn't True, should fail.
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "mfa": "true"}})
+    with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NO_MFA)):
+        await requires_mfa()
+
     # Test with session with MFA, should work.
     quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}})
     await requires_mfa()
+
+
+@pytest.mark.auth
+def test_mfa_enabled_is_the_old_name():
+    """mfa_enabled still works as the old name for mfa_protected (#44)"""
+    assert R.mfa_enabled == R.mfa_protected
 
 
 @pytest.mark.auth
@@ -341,3 +357,125 @@ def test_requirements_to_iter_is_deprecated():
         assert asfquart.auth.requirements_to_iter(R.member) == [R.member]
     with pytest.warns(DeprecationWarning):
         assert asfquart.auth.requirements_to_iter(None) == []
+
+
+# ---- Sessions that aren't a ClientSession (#44) ----
+
+class _FullSession:
+    """An app's own session class, with every attribute the requirements read"""
+    def __init__(self, **values):
+        self.uid = "testuser"
+        self.isMember = self.isChair = self.isRoot = self.isRole = self.mfa = False
+        self.committees = []
+        self.__dict__.update(values)
+
+
+class _OwnNamesSession:
+    """An app's own session class with its own field names - only mfa matches"""
+    def __init__(self):
+        self.uid = "testuser"
+        self.mfa = True
+        self.is_member = True
+        self.member_committees = ["httpd"]
+
+
+MISSING_ATTRIBUTES = [
+    (R.member, "isMember"),
+    (R.chair, "isChair"),
+    (R.root, "isRoot"),
+    (R.roleacct, "isRole"),
+    (R.pmc_member, "committees"),
+]
+
+
+@pytest.mark.auth
+def test_session_protocol():
+    assert isinstance(asfquart.session.ClientSession({"uid": "testuser"}), asfquart.session.SessionProtocol)
+    assert isinstance(_FullSession(), asfquart.session.SessionProtocol)
+    assert not isinstance(_OwnNamesSession(), asfquart.session.SessionProtocol)
+    assert not isinstance({"uid": "testuser"}, asfquart.session.SessionProtocol)  # a dict has no uid attribute
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("requirement, values", [
+    (R.mfa_protected, {"mfa": True}),
+    (R.member, {"isMember": True}),
+    (R.chair, {"isChair": True}),
+    (R.root, {"isRoot": True}),
+    (R.roleacct, {"isRole": True}),
+    (R.pmc_member, {"committees": ["httpd"]}),
+])
+def test_requirements_work_with_other_session_classes(requirement, values):
+    assert requirement(_FullSession(**values))[0] is True
+    assert requirement(_FullSession())[0] is False
+
+
+@pytest.mark.auth
+def test_requirements_only_need_the_attribute_they_read():
+    own = _OwnNamesSession()
+    assert R.committer(own)[0] is True
+    assert R.mfa_protected(own)[0] is True
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("requirement, attribute", MISSING_ATTRIBUTES)
+async def test_require_names_the_missing_attribute(monkeypatch, requirement, attribute):
+    """A session missing the attribute is a clear TypeError, not a pass"""
+    asfquart.construct("foobar", token_file=None)
+    own = _OwnNamesSession()
+
+    async def read():
+        return own
+    monkeypatch.setattr(asfquart.session, "read", read)
+    ran = []
+
+    @asfquart.auth.require(requirement)
+    async def endpoint():
+        ran.append(True)
+
+    with pytest.raises(TypeError) as excinfo:
+        await endpoint()
+    message = str(excinfo.value)
+    assert "_OwnNamesSession" in message
+    assert repr(attribute) in message
+    assert "SessionProtocol" in message
+
+    # Same in any_of - it mustn't be skipped in favour of the next requirement, which would pass.
+    # A list, so the order is fixed.
+    @asfquart.auth.require(any_of=[requirement, R.mfa_protected])
+    async def either():
+        ran.append(True)
+
+    with pytest.raises(TypeError, match=attribute):
+        await either()
+    assert ran == []
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("requirement, attribute", MISSING_ATTRIBUTES)
+def test_requirement_called_directly_raises_attribute_error(requirement, attribute):
+    """Outside @require there's no translation, just Python's AttributeError"""
+    with pytest.raises(AttributeError, match=attribute):
+        requirement(_OwnNamesSession())
+
+
+@pytest.mark.auth
+async def test_require_leaves_other_attribute_errors_alone(monkeypatch):
+    """An AttributeError that isn't about the session is a bug in the requirement, so it's not translated"""
+    asfquart.construct("foobar", token_file=None)
+
+    async def read():
+        return _FullSession()
+    monkeypatch.setattr(asfquart.session, "read", read)
+
+    class Own(R):
+        @classmethod
+        def broken(cls, client_session):
+            return None.nothing, "never"
+
+    @asfquart.auth.require(Own.broken)
+    async def endpoint():
+        pass
+
+    with pytest.raises(AttributeError, match="nothing"):
+        await endpoint()

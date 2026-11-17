@@ -8,7 +8,10 @@ import inspect
 import warnings
 
 class Requirements:
-    """Various pre-defined access requirements"""
+    """Various pre-defined access requirements.
+
+    These don't check the session's class, as it isn't always a ClientSession - see
+    session.SessionProtocol for the attributes they read."""
 
     # Error messages related to tests
     E_NOT_LOGGED_IN = "You need to be logged in to access this endpoint."
@@ -21,41 +24,46 @@ class Requirements:
 
 
     @classmethod
-    def mfa_enabled(cls, client_session: session.ClientSession):
-        """Tests for MFA enabled in the client session"""
+    def mfa_protected(cls, client_session: session.SessionProtocol):
+        """Tests for whether the user logged in with multi-factor authentication"""
+        # The OAuth provider only sends mfa for OIDC logins, so it defaults to False for anything else.
+        # Anything but True will cause a failure.
         return client_session.mfa is True, cls.E_NO_MFA
 
+    # Old name for mfa_protected, kept so existing apps don't break (#44)
+    mfa_enabled = mfa_protected
+
     @classmethod
-    def committer(cls, client_session: session.ClientSession):
+    def committer(cls, client_session: typing.Any):
         """Tests for whether the user is a committer on any project"""
         return client_session is not None, cls.E_NOT_LOGGED_IN
 
     @classmethod
-    def member(cls, client_session: session.ClientSession):
+    def member(cls, client_session: session.SessionProtocol):
         """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
         return client_session.isMember is True, cls.E_NOT_MEMBER
 
     @classmethod
-    def chair(cls, client_session: session.ClientSession):
+    def chair(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
         return client_session.isChair is True, cls.E_NOT_CHAIR
 
     @classmethod
-    def root(cls, client_session: session.ClientSession):
+    def root(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a member of infra-root"""
         # Anything but True will cause a failure.
         return client_session.isRoot is True, cls.E_NOT_ROOT
 
     @classmethod
-    def pmc_member(cls, client_session: session.ClientSession):
+    def pmc_member(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a PMC member of any top-level project"""
         # Anything but True will cause a failure.
         return bool(client_session.committees), cls.E_NOT_PMC
 
     @classmethod
-    def roleacct(cls, client_session: session.ClientSession):
+    def roleacct(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
         return client_session.isRole is True, cls.E_NOT_ROLEACCOUNT
@@ -97,6 +105,21 @@ def requirements_to_iter(args: typing.Any):
     return _requirements_to_list(args)
 
 
+def _check(requirement: typing.Callable, client_session: typing.Any):
+    """Runs a requirement against the session, with a clearer error if the session is missing
+    the attribute the requirement reads"""
+    try:
+        return requirement(client_session)
+    except AttributeError as e:
+        # Only translate if it's the session that's missing the attribute - anything else is a real bug
+        if e.obj is not client_session:
+            raise
+        raise TypeError(
+            f"Session type {type(client_session).__name__} has no {e.name!r} attribute, which this "
+            "requirement needs - see asfquart.session.SessionProtocol"
+        ) from None
+
+
 async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of: list, /, *args, **kwargs):
     """Runs the endpoint original_func, provided there is a session and it meets the requirements"""
     client_session = await session.read()
@@ -107,7 +130,7 @@ async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of:
 
     # Test all_of
     for requirement in all_of:
-        passes, desc = requirement(client_session)
+        passes, desc = _check(requirement, client_session)
         if not passes:
             errors_list.append(desc)
     # If we encountered an error, bail early
@@ -116,7 +139,7 @@ async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of:
 
     # So far, so good? Run the any_of if present, break if any single test succeeds.
     for requirement in any_of:
-        passes, desc = requirement(client_session)
+        passes, desc = _check(requirement, client_session)
         if not passes:
             errors_list.append(desc)
         else:
@@ -139,7 +162,7 @@ def require(
     explicitly using the `all_of` or `any_of` keywords to specify optionality. Requirements must be part
     of the asfquart.auth.Requirements class, which consists of the following test:
 
-    - mfa_enabled: The client must authenticate with a method that has MFA enabled
+    - mfa_protected: The client must have logged in with MFA
     - committer: The client must be a committer
     - member: The client must be a foundation member
     - chair: The client must be a chair of a project
@@ -157,10 +180,10 @@ def require(
         @require(Requirements.member)  # Require session, require ASF member
         @require  # Require any authed session
         @require()  # The same: require any authed session
-        @require({Requirements.mfa_enabled, Requirements.chair})  # Require any project chair with MFA-enabled session
-        @require(all_of=Requirements.mfa_enabled, any_of={Requirements.member, Requirements.chair})
-          # Require either ASF member OR project chair, but also require MFA enabled in any case.
-        @require(Requirements.mfa_enabled, any_of={Requirements.member, Requirements.chair})
+        @require({Requirements.mfa_protected, Requirements.chair})  # Require any project chair with an MFA-protected session
+        @require(all_of=Requirements.mfa_protected, any_of={Requirements.member, Requirements.chair})
+          # Require either ASF member OR project chair, but also require an MFA-protected session in any case.
+        @require(Requirements.mfa_protected, any_of={Requirements.member, Requirements.chair})
           # The same again, with the requirement that must always be met given as the first argument.
     """
 

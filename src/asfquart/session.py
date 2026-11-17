@@ -8,6 +8,7 @@ import time
 import binascii
 import inspect
 import logging
+import typing
 
 import quart
 import asfquart
@@ -96,6 +97,38 @@ def _generate_sid() -> str:
 
 def _hash_sid(sid: str) -> str:
     return hashlib.sha3_256(sid.encode("utf-8")).hexdigest()
+
+
+@typing.runtime_checkable
+class SessionProtocol(typing.Protocol):
+    """What asfquart expects of a session.
+
+    Without a session store the session is a ClientSession, which has all of these. With a store
+    (app.sessions) it's whatever the store returns, so that object needs a uid, and the attribute
+    for each requirement the app uses. Type checkers can check a session class against this.
+    """
+
+    # Properties, as these are only ever read - a class can then use a narrower type, e.g. list[str]
+    @property
+    def uid(self) -> str | None: ...  # None only if the session was built from data with no uid
+
+    @property
+    def isMember(self) -> bool: ...  # Requirements.member
+
+    @property
+    def isChair(self) -> bool: ...  # Requirements.chair
+
+    @property
+    def isRoot(self) -> bool: ...  # Requirements.root
+
+    @property
+    def isRole(self) -> bool: ...  # Requirements.roleacct
+
+    @property
+    def mfa(self) -> bool: ...  # Requirements.mfa_protected
+
+    @property
+    def committees(self) -> typing.Collection[str]: ...  # Requirements.pmc_member
 
 
 class ClientSession(dict):
@@ -288,7 +321,7 @@ async def aclear(app=None):
     quart.session.pop(cookie_id, None)
 
 
-async def areplace(session_object, app=None):
+async def areplace(session_object: SessionProtocol, app=None):
     """Replaces the current session with a pre-constructed session object."""
 
     if app is None:
@@ -296,6 +329,12 @@ async def areplace(session_object, app=None):
 
     if not app.sessions:
         raise RuntimeError("areplace() requires an async session store")
+    # Checked before the old session is touched, so a refusal leaves the user logged in
+    if not hasattr(session_object, "uid"):
+        raise TypeError(
+            f"areplace() needs a session object with a uid attribute, got {type(session_object).__name__} "
+            "- see SessionProtocol"
+        )
 
     cookie_id = app.app_id
     new_sid = _generate_sid()
