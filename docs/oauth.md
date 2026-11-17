@@ -144,6 +144,88 @@ Any response to a URL on the OAuth endpoint with a `code` in it is sent with
   navigation from the provider and browsers do not send `Strict` cookies on it. Deployments
   where the provider and the app share a site may set it to `"Strict"`.
 
+## Requests that change state
+
+A `GET` request ought not to change anything, because browsers, proxies and other sites make
+`GET` requests freely: a link, an image, a prefetch. Three of the requests to the OAuth
+endpoint do change something. Two of them have to be `GET` all the same, and one does not.
+
+| Request | What it changes | Methods |
+|---|---|---|
+| `/auth?login` | Adds a pending login | `GET` and `POST` |
+| `/auth?state=...&code=...` (the callback) | Completes the login and creates the session | `GET` and `POST` |
+| `/auth?logout` | Ends the session, and tells the browser to clear the app's data | `POST`; `GET` unless turned off |
+| `/auth` | Nothing: shows the session | `GET` and `POST` |
+
+- **Starting a login** has to work with `GET`. The browser gets there by a redirect, from
+  `enforce_login()` or from a link, and a redirect cannot be a `POST`. What it changes is
+  small and bounded: one pending login, of which only so many are kept (see "Limits" below).
+  A login that another site starts cannot put the user in somebody else's account, because
+  it can only be completed by the browser that started it, and that user then logs in as
+  themselves.
+- **The callback** has to work with `GET`, because the OAuth provider sends the browser to
+  it by a redirect. It is protected by the callback rules above: the `state` is random, tied
+  to the browser, and can be used once.
+- **Logging out** can be a `POST`, and should be.
+
+### Logging out
+
+Log out with a form, not with a link:
+
+```html
+<form method="post" action="/auth?logout=/">
+  <button type="submit">Log out</button>
+</form>
+```
+
+A `POST` to `/auth?logout` answers `204`, and one to `/auth?logout=/foo` redirects to `/foo`.
+
+A logout by `GET` is still accepted, because many applications have a logout link. Whether
+by `POST` or by `GET`, a logout that another site asked for is refused with a `403`: the
+session is left alone and the browser is not told to clear anything. asfquart goes by the
+`Sec-Fetch-Site` header that browsers send:
+
+| `Sec-Fetch-Site` | Meaning | `POST` logout | `GET` logout |
+|---|---|---|---|
+| `same-origin`, `same-site` | The application's own page, or one on the same site | Accepted | Accepted |
+| `none` | The user typed the address or used a bookmark | Refused | Accepted |
+| `cross-site` | A page on another site: a link, a form, an image | Refused | Refused |
+| not sent | An old browser, or a client that is not a browser | Accepted | Accepted |
+
+Without this check, any web page could log a user out by including the logout address as an
+image. The session cookie is not sent with such a request, but the answer to a logout carries
+a `Clear-Site-Data` header, which tells the browser to drop the application's cookies, cache
+and storage whether the cookie was sent or not.
+
+Two things follow for an application that keeps its logout link:
+
+- A logout link on a page of another site no longer works. `apache.org` hosts count as the
+  same site as each other, so a link from one to another does.
+- A page that is reached from another site and answers with a redirect to `/auth?logout` is
+  refused as well: the browser still reports the request as coming from the other site.
+
+To refuse `GET` logouts altogether, set `logout_by_get=False` when calling `setup_oauth()`.
+Its default is `asfquart.generics.OAUTH_LOGOUT_BY_GET`, so an application that uses
+`asfquart.construct()` can set that instead:
+
+```python
+import asfquart
+import asfquart.generics
+
+asfquart.generics.OAUTH_LOGOUT_BY_GET = False
+app = asfquart.construct("myapp")
+```
+
+A `GET` (or `HEAD`) to `/auth?logout` is then a `405` with an `Allow: POST` header, and
+nobody is logged out. Do this once the application's own logout is a form.
+
+While `GET` logouts are accepted, asfquart logs one warning per process the first time one
+is served, as a reminder that the application still has a logout link:
+
+```
+A logout was requested with GET. A logout changes state, so it should be a POST: use a form rather than a link, and then set asfquart.generics.OAUTH_LOGOUT_BY_GET = False. See docs/oauth.md
+```
+
 ## Logging logins
 
 asfquart does not keep an audit trail of logins. It logs a warning when the exchange with

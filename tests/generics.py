@@ -10,6 +10,7 @@ import aiohttp
 import aiohttp.test_utils
 import aiohttp.web
 import pytest
+import quart
 
 import asfquart
 import asfquart.generics
@@ -1024,3 +1025,181 @@ async def test_no_referrer_policy_without_a_code(url):
     async with app.test_app():
         resp = await app.test_client().get(url, scheme="https")
         assert "Referrer-Policy" not in resp.headers
+
+
+# ---- Requests that change state: logout by POST (#69) ----
+
+def _make_app_with_logout_by_get(logout_by_get):
+    """An app that calls setup_oauth() itself, to pass logout_by_get"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, logout_by_get=logout_by_get)
+    return app
+
+
+def _add_session_routes(app):
+    """Routes to log in without the OAuth provider, and to see whether the browser is still logged in"""
+    @app.route("/test-login")
+    async def test_login():
+        asfquart.session.write({"uid": "testuser"})
+        return "ok"
+
+    @app.route("/test-whoami")
+    async def test_whoami():
+        session = await asfquart.session.read()
+        return session.uid if session is not None else "nobody"
+
+
+async def _whoami(client):
+    return (await (await client.get("/test-whoami", scheme="https")).get_data()).decode()
+
+
+@pytest.fixture
+def real_session(monkeypatch):
+    """Other tests replace quart.session; these need the session cookie"""
+    monkeypatch.setattr(quart, "session", quart.globals.session)
+    monkeypatch.setattr(asfquart.generics, "_warned_get_logout", False)
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("site", [None, "same-origin", "same-site", "none"])
+@pytest.mark.parametrize("url, status", [("/auth?logout", 200), ("/auth?logout=/goodbye", 302)])
+async def test_get_logout_from_the_app_itself_still_works(real_session, site, url, status):
+    """A logout link in the app, a typed address, and a client that sends no Sec-Fetch-Site"""
+    app = _make_app()
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        assert await _whoami(client) == "testuser"
+        headers = {"Sec-Fetch-Site": site} if site else {}
+        resp = await client.get(url, scheme="https", headers=headers)
+        assert resp.status_code == status
+        assert resp.headers["Clear-Site-Data"] == '"cache", "cookies", "storage"'
+        assert await _whoami(client) == "nobody"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize("url", ["/auth?logout", "/auth?logout=/goodbye", "/auth?logout=https://evil.example"])
+async def test_get_logout_from_another_site_is_refused(real_session, method, url):
+    """Another site cannot log a user out, nor have the browser clear the app's data"""
+    app = _make_app()
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await client.open(url, method=method, scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        assert resp.status_code == 403
+        assert "Clear-Site-Data" not in resp.headers
+        assert "Location" not in resp.headers
+        assert "Set-Cookie" not in resp.headers
+        assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+async def test_post_logout_from_another_site_is_refused(real_session):
+    """As before: the check on a POST does not allow "none" either"""
+    app = _make_app()
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        for site in ("cross-site", "none"):
+            resp = await client.post("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": site})
+            assert resp.status_code == 403
+            assert "Clear-Site-Data" not in resp.headers
+        assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize("site", [None, "same-origin", "none", "cross-site"])
+async def test_get_logout_can_be_turned_off(real_session, method, site):
+    """With logout_by_get=False a GET logout is a 405 wherever it comes from, and logs nobody out"""
+    app = _make_app_with_logout_by_get(False)
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        headers = {"Sec-Fetch-Site": site} if site else {}
+        for url in ("/auth?logout", "/auth?logout=/goodbye"):
+            resp = await client.open(url, method=method, scheme="https", headers=headers)
+            assert resp.status_code == 405
+            assert resp.headers["Allow"] == "POST"
+            assert "Clear-Site-Data" not in resp.headers
+            assert "Location" not in resp.headers
+        assert await _whoami(client) == "testuser"
+
+
+@pytest.mark.generics
+async def test_post_logout_works_when_get_is_turned_off(real_session, caplog):
+    app = _make_app_with_logout_by_get(False)
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        await client.get("/test-login", scheme="https")
+        resp = await client.post("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": "same-origin"})
+        assert resp.status_code == 204
+        assert resp.headers["Clear-Site-Data"] == '"cache", "cookies", "storage"'
+        assert await _whoami(client) == "nobody"
+        await client.get("/test-login", scheme="https")
+        resp = await client.post("/auth?logout=/goodbye", scheme="https")
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "/goodbye"
+        assert await _whoami(client) == "nobody"
+    assert "requested with GET" not in caplog.text
+
+
+@pytest.mark.generics
+async def test_login_and_the_session_display_are_not_affected_by_turning_get_logout_off(real_session):
+    """Starting a login has to work with GET: the browser gets there by a redirect"""
+    app = _make_app_with_logout_by_get(False)
+    _add_session_routes(app)
+    async with app.test_app():
+        client = app.test_client()
+        resp = await client.get("/auth?login=/dashboard", scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        assert resp.status_code == 302
+        assert resp.headers["Location"].startswith("https://oauth.apache.org/")
+        await client.get("/test-login", scheme="https")
+        assert (await client.get("/auth", scheme="https")).status_code == 200
+
+
+@pytest.mark.generics
+async def test_logout_by_get_module_default(real_session, monkeypatch):
+    """OAUTH_LOGOUT_BY_GET is the default for apps made by construct(), and may be set after it"""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        assert (await client.get("/auth?logout", scheme="https")).status_code == 200
+        monkeypatch.setattr(asfquart.generics, "OAUTH_LOGOUT_BY_GET", False)
+        assert (await client.get("/auth?logout", scheme="https")).status_code == 405
+        assert (await client.post("/auth?logout", scheme="https")).status_code == 204
+
+
+@pytest.mark.generics
+async def test_logout_by_get_parameter_wins_over_module_default(real_session, monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "OAUTH_LOGOUT_BY_GET", False)
+    app = _make_app_with_logout_by_get(True)
+    async with app.test_app():
+        assert (await app.test_client().get("/auth?logout", scheme="https")).status_code == 200
+    monkeypatch.setattr(asfquart.generics, "OAUTH_LOGOUT_BY_GET", True)
+    app = _make_app_with_logout_by_get(False)
+    async with app.test_app():
+        assert (await app.test_client().get("/auth?logout", scheme="https")).status_code == 405
+
+
+@pytest.mark.generics
+async def test_get_logout_is_warned_about_once(real_session, caplog):
+    """The log says once that logout should be a POST; refused and POST logouts do not count"""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        await client.post("/auth?logout", scheme="https")
+        await client.get("/auth?logout", scheme="https", headers={"Sec-Fetch-Site": "cross-site"})
+        assert "requested with GET" not in caplog.text
+        for _ in range(3):
+            await client.get("/auth?logout", scheme="https")
+    warnings = [r for r in caplog.records if r.name == "asfquart.generics" and "requested with GET" in r.getMessage()]
+    assert len(warnings) == 1
+    assert warnings[0].levelname == "WARNING"
+    assert "OAUTH_LOGOUT_BY_GET" in warnings[0].getMessage()
