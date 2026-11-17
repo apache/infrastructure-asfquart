@@ -27,10 +27,12 @@ Changes in 0.1.13:
  OAuth
  - The auth endpoint accepts POST as well as GET, with a `Sec-Fetch-Site` check as light CSRF
    protection; a POST logout answers 204.
- - A logout requested with `GET` by another site (`Sec-Fetch-Site: cross-site`) is refused with a
-   403, as a `POST` already was. Before, any page could log a user out, and have the browser clear
-   the app's data, by including the logout address as an image. A logout link in the app itself
-   still works, and a warning is logged once to say that logout should be a `POST`. `GET` logout
+ - A logout requested with `GET` is refused with a 403 unless it is the user going to the address:
+   not when another site asked for it (`Sec-Fetch-Site: cross-site`), when a page fetched it for an
+   image, a frame or the like (`Sec-Fetch-Mode` other than `navigate`), or when the browser
+   prefetched it. Before, any page could log a user out, and have the browser clear the app's
+   data, by including the logout address as an image. A logout link in the app itself still
+   works, and a warning is logged once to say that logout should be a `POST`. `GET` logout
    can be turned off with the new `logout_by_get` argument of `setup_oauth`, or
    `generics.OAUTH_LOGOUT_BY_GET = False`; it is then a 405. See "Requests that change state" in
    `docs/oauth.md` (#69).

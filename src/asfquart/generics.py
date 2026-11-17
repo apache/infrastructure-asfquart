@@ -129,11 +129,27 @@ def _refuse_get_logout(logout_by_get):
             headers={"Allow": "POST"},
             content_type="text/plain; charset=utf-8"
         )
-    # The same check as for a POST, on what the browser says about where the request came from.
-    # "none" is allowed as well: it is the user's own doing, a typed address or a bookmark. A
-    # browser that does not send the header is let through, as is a client that is not a browser.
-    if quart.request.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "same-site", "none"):
-        return quart.Response(status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8")
+    headers = quart.request.headers
+    # A browser that is fetching the page ahead of time, in case the user goes there, has not been
+    # asked to log anyone out. Sec-Purpose is the standard header; the other two are older.
+    if (
+        headers.get("Sec-Purpose", "").startswith("prefetch")
+        or headers.get("Purpose") == "prefetch"
+        or headers.get("X-Moz") == "prefetch"
+    ):
+        return quart.Response(status=403, response="Not prefetched\n", content_type="text/plain; charset=utf-8")
+    # What the browser says about where the request came from. A browser that does not send these
+    # headers is let through, as is a client that is not a browser.
+    site = headers.get("Sec-Fetch-Site")
+    if site is not None:
+        # Not from another site. "none" is the user's own doing: a typed address or a bookmark.
+        allowed = site in ("same-origin", "same-site", "none")
+        # And it is the user going to the address in a window or tab, not a page fetching it for an
+        # image, a script or a frame. "same-site" is every host that shares the app's registered
+        # domain, so without this any of them could log the user out from within a page.
+        allowed = allowed and headers.get("Sec-Fetch-Mode") == "navigate" and headers.get("Sec-Fetch-Dest") == "document"
+        if not allowed:
+            return quart.Response(status=403, response="CSRF Protection\n", content_type="text/plain; charset=utf-8")
     if not _warned_get_logout:
         _warned_get_logout = True
         LOGGER.warning(

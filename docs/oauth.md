@@ -180,22 +180,39 @@ Log out with a form, not with a link:
 
 A `POST` to `/auth?logout` answers `204`, and one to `/auth?logout=/foo` redirects to `/foo`.
 
-A logout by `GET` is still accepted, because many applications have a logout link. Whether
-by `POST` or by `GET`, a logout that another site asked for is refused with a `403`: the
-session is left alone and the browser is not told to clear anything. asfquart goes by the
-`Sec-Fetch-Site` header that browsers send:
+A logout by `GET` is still accepted, because many applications have a logout link. It is
+accepted only when it is the user going to the address, though. A request that another site
+asked for, or that a page made for itself, is refused with a `403`: the session is left alone
+and the browser is not told to clear anything. asfquart goes by the headers that browsers
+send with a request.
+
+`Sec-Fetch-Site` says where the request came from:
 
 | `Sec-Fetch-Site` | Meaning | `POST` logout | `GET` logout |
 |---|---|---|---|
-| `same-origin`, `same-site` | The application's own page, or one on the same site | Accepted | Accepted |
-| `none` | The user typed the address or used a bookmark | Refused | Accepted |
+| `same-origin`, `same-site` | The application's own page, or one on the same site | Accepted | Accepted, if a navigation |
+| `none` | The user typed the address or used a bookmark | Refused | Accepted, if a navigation |
 | `cross-site` | A page on another site: a link, a form, an image | Refused | Refused |
 | not sent | An old browser, or a client that is not a browser | Accepted | Accepted |
 
-Without this check, any web page could log a user out by including the logout address as an
-image. The session cookie is not sent with such a request, but the answer to a logout carries
-a `Clear-Site-Data` header, which tells the browser to drop the application's cookies, cache
-and storage whether the cookie was sent or not.
+For a `GET`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest` must also say that the request is a
+navigation in a window or tab (`navigate` and `document`): the user followed a link or
+entered the address. A page that fetches the address for an image, a script, a frame or with
+`fetch()` is refused, wherever the page is. That matters because "the same site" is wider
+than it sounds: every host under `apache.org` is the same site as every other, so a page on
+any of them could otherwise log the user out by including the logout address as an image.
+
+A `GET` that a browser makes ahead of time, in case the user follows the link (a prefetch,
+marked `Sec-Purpose: prefetch`), is refused as well.
+
+Without these checks, any web page could log a user out by including the logout address as
+an image. The session cookie is not sent with such a request, but the answer to a logout
+carries a `Clear-Site-Data` header, which tells the browser to drop the application's
+cookies, cache and storage whether the cookie was sent or not.
+
+What the checks do not stop is a page on another `apache.org` host sending the user's
+window to the logout address, by a link or by a `POST` form. The user sees that happen. Only
+turning `GET` logout off, below, narrows it further, and then only to a form.
 
 Two things follow for an application that keeps its logout link:
 
