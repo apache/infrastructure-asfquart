@@ -33,6 +33,9 @@ Changes in 0.1.13:
    2,048 characters (`generics.MAX_REDIRECT_URI_LENGTH`). Anything else is a 400 (#90, #124).
  - A pending login is tied to the browser that started it by a cookie; the callback must come from
    the same browser. The full set of callback rules is in `docs/oauth.md`.
+ - `setup_oauth` takes a `callback_host` argument, to pin the host of the OAuth callback URL
+   instead of taking it from the request's `Host` header. Its default is the new
+   `generics.OAUTH_CALLBACK_HOST`, which is unset (#93).
  - OAuth logins that are started and never completed no longer stay in memory until a restart: they
    are removed once they have expired, and no more than `generics.DEFAULT_MAX_PENDING_LOGINS`
    (10,000) are kept, the oldest being dropped first. `setup_oauth` takes a `max_pending_logins`
