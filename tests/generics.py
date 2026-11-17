@@ -10,6 +10,7 @@ import aiohttp
 import pytest
 
 import asfquart
+import asfquart.generics
 
 
 # Counter for unique app names to avoid duplicate route registration
@@ -790,3 +791,99 @@ async def test_no_warning_once_nothing_is_being_dropped(monkeypatch, caplog):
         for _ in range(5):
             await client.get("/auth?login", scheme="https")  # only expired logins are removed now
         assert len(_pending_warnings(caplog)) == 1
+
+
+# ---- The callback URL sent to the OAuth provider (#93) ----
+
+async def _callback_url(app, host):
+    """Starts a login as a request for the given Host, and returns the callback URL sent to the provider"""
+    resp = await app.test_client().get("/auth?login", scheme="https", headers={"Host": host})
+    assert resp.status_code == 302
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(resp.headers["Location"]).query)
+    return urllib.parse.urlsplit(query["redirect_uri"][0])
+
+
+@pytest.mark.generics
+async def test_callback_url_follows_host_header_by_default():
+    app = _make_app()
+    async with app.test_app():
+        callback = await _callback_url(app, "myapp.apache.org")
+    assert (callback.scheme, callback.netloc, callback.path) == ("https", "myapp.apache.org", "/auth")
+
+
+def _make_app_with_callback_host(callback_host):
+    """An app that calls setup_oauth() itself, to pass callback_host"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, callback_host=callback_host)
+    return app
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("setting, netloc", [
+    ("https://myapp.apache.org", "myapp.apache.org"),
+    ("https://myapp.apache.org/", "myapp.apache.org"),
+    ("https://localhost.apache.org:8080", "localhost.apache.org:8080"),
+])
+@pytest.mark.parametrize("how", ["parameter", "module default"])
+async def test_callback_url_uses_configured_host(monkeypatch, setting, netloc, how):
+    """With a callback host set, the Host header has no say in the callback URL"""
+    if how == "parameter":
+        app = _make_app_with_callback_host(setting)
+    else:
+        monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", setting)
+        app = _make_app()
+    async with app.test_app():
+        callback = await _callback_url(app, "evil.example.org")
+    assert (callback.scheme, callback.netloc, callback.path) == ("https", netloc, "/auth")
+    assert list(urllib.parse.parse_qs(callback.query)) == ["state"]
+
+
+@pytest.mark.generics
+async def test_callback_host_parameter_wins_over_module_default(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", "https://default.apache.org")
+    app = _make_app_with_callback_host("https://myapp.apache.org")
+    async with app.test_app():
+        callback = await _callback_url(app, "evil.example.org")
+    assert callback.netloc == "myapp.apache.org"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("setting", [
+    "http://myapp.apache.org",           # not https
+    "myapp.apache.org",                  # no scheme
+    "https://",                          # no host
+    "https://myapp.apache.org/app",      # a path
+    "https://myapp.apache.org?x=1",      # a query string
+    "https://myapp.apache.org#frag",     # a fragment
+    "https://user:pw@myapp.apache.org",  # userinfo
+    "https://myapp.apache.org:notaport",
+    "https://myapp.apache.org\\@evil.example",
+    "https://my app.apache.org",
+    "https://myapp.apache.org\n",
+    "https://[::1]",                     # IPv6 literals aren't supported
+    b"https://myapp.apache.org",         # not a string
+])
+def test_callback_host_is_validated(monkeypatch, setting):
+    """A bad callback host stops the app from starting, however it was set"""
+    with pytest.raises(ValueError, match="callback host"):
+        _make_app_with_callback_host(setting)
+    monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", setting)
+    with pytest.raises(ValueError, match="callback host"):
+        _make_app()
+
+
+@pytest.mark.generics
+async def test_callback_host_set_after_setup_still_applies(monkeypatch, caplog):
+    """The module default is read at each login, so setting it late isn't silently ignored"""
+    app = _make_app()
+    async with app.test_app():
+        monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", "https://myapp.apache.org")
+        callback = await _callback_url(app, "evil.example.org")
+        assert callback.netloc == "myapp.apache.org"
+
+        # A bad value fails the login - it doesn't fall back to the Host header
+        monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", "http://myapp.apache.org")
+        resp = await app.test_client().get("/auth?login", scheme="https")
+    assert resp.status_code == 500
+    assert "Location" not in resp.headers
+    assert "callback host must be https://" in caplog.text

@@ -114,6 +114,27 @@ header rather than a 30x response, so that `SameSite` session cookies are kept).
   asfquart.generics.setup_oauth(app, uri="/auth", workflow_timeout=300)
   asfquart.generics.enforce_login(app, redirect_uri="/auth")
   ```
+- `callback_host` is a parameter of `setup_oauth()` that pins the host the OAuth provider sends
+  the browser back to. Without it, the callback URL is built from the request's `Host` header,
+  so it relies on the proxy in front of the app passing that header through unchanged
+  (`ProxyPreserveHost On` for httpd). The ASF provider only accepts pre-approved callback
+  URLs, which limits what a forged header can do, but setting this removes the dependency.
+
+  Its default is `asfquart.generics.OAUTH_CALLBACK_HOST`, so an app that uses
+  `asfquart.construct()` can set that instead:
+
+  ```python
+  import asfquart
+  import asfquart.generics
+
+  asfquart.generics.OAUTH_CALLBACK_HOST = "https://myapp.apache.org"
+  app = asfquart.construct("myapp")
+  ```
+
+  It must be `https://` and a host name (with a port if needed), and nothing else - a bad
+  value raises a `ValueError` when the app is set up. IP address literals in brackets, such as
+  `https://[::1]`, aren't accepted. Users have to log in on that host, as the cookie that ties
+  a login to the browser is set for the host the login started on.
 - `asfquart.generics.STATE_COOKIE_SAMESITE` defaults to `"Lax"`. This is required when the
   OAuth provider is on a different site from the app, because the callback is a top-level
   navigation from the provider and browsers do not send `Strict` cookies on it. Deployments

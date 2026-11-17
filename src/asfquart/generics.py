@@ -6,6 +6,7 @@ import functools
 import hashlib
 import hmac
 import logging
+import re
 import secrets
 import ssl
 import unicodedata
@@ -28,6 +29,9 @@ import asfquart  # implies .session
 OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 DEFAULT_OAUTH_URI = "/auth"
+
+# The default for setup_oauth()'s callback_host, e.g. "https://myapp.apache.org" (#93)
+OAUTH_CALLBACK_HOST = None
 
 # The pending login is tied to the browser that started it, via this cookie.
 # SameSite=Lax is required: the callback is a top level navigation from the
@@ -56,6 +60,27 @@ DEFAULT_MAX_PENDING_LOGINS = 10000
 MAX_REDIRECT_URI_LENGTH = 2048
 
 LOGGER = logging.getLogger(__name__)
+
+
+# An exact match rather than parsing, as urlsplit lets through userinfo, spaces and the like
+_CALLBACK_HOST_RE = re.compile(r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?")
+
+
+def _check_callback_host(host):
+    """Raises a ValueError unless host is usable as the OAuth callback host"""
+    if not isinstance(host, str) or not _CALLBACK_HOST_RE.fullmatch(host):
+        raise ValueError("The OAuth callback host must be https://, a host name, and optionally a port")
+
+
+def _callback_host(pinned):
+    """Returns the scheme and host for the OAuth callback URL. pinned is setup_oauth()'s callback_host"""
+    host = pinned if pinned is not None else OAUTH_CALLBACK_HOST
+    if host is None:
+        return quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
+    # OAUTH_CALLBACK_HOST is read here, not at setup, so one set late still applies. A bad value
+    # is an error - falling back to the Host header would quietly undo the pin.
+    _check_callback_host(host)
+    return host
 
 
 def _browser_digest(browser):
@@ -133,7 +158,13 @@ def _purge_pending_states(pending_states: dict, workflow_timeout: int, max_size:
     return evicted
 
 
-def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pending_logins: typing.Optional[int] = None):
+def setup_oauth(
+    app,
+    uri=DEFAULT_OAUTH_URI,
+    workflow_timeout: int = 900,
+    max_pending_logins: typing.Optional[int] = None,
+    callback_host: typing.Optional[str] = None,
+):
     """Sets up a generic ASF OAuth endpoint for the given app. The default URI is /auth, and the
     default workflow timeout is 900 seconds (15 min), within which the OAuth login must
     be completed. At most max_pending_logins logins that have been started and not yet completed
@@ -145,9 +176,15 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pen
     - /auth?logout - Clears a user session, logging them out
     - /auth  - Shows the user's credentials if logged in, 404 otherwise.
 
-    This generic route expects the Host: header of the request to be accurate, which means setting
+    callback_host pins the host the OAuth provider sends the browser back to, e.g.
+    "https://myapp.apache.org" (OAUTH_CALLBACK_HOST if not given). Without one, this generic route
+    expects the Host: header of the request to be accurate, which means setting
     "ProxyPreserveHost On" in your httpd config if proxying.
     """
+
+    host = callback_host if callback_host is not None else OAUTH_CALLBACK_HOST
+    if host is not None:
+        _check_callback_host(host)  # fail at startup rather than at the first login
 
     pending_states = {}  # keeps track of pending states and their expiry
     if max_pending_logins is None:
@@ -201,9 +238,8 @@ def setup_oauth(app, uri=DEFAULT_OAUTH_URI, workflow_timeout: int = 900, max_pen
             # Save the time we initialized this state, the optional login redirect URI,
             # and a digest of the browser cookie that is allowed to complete this login
             pending_states[state] = [time.time(), login_uri, _browser_digest(browser)]
-            callback_host = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
             callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
-                callback_host,
+                _callback_host(callback_host),
                 f"{uri}?state={state}",
             )
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
