@@ -10,7 +10,7 @@ import asfquart
 @pytest.mark.session
 async def test_sessions():
     app = asfquart.construct("foobar", token_file=None)
-    quart.session = {app.app_id: {"uts": time.time(), "uid": "bar"}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "uid": "bar"}})
     my_session = await asfquart.session.read()
     assert my_session, "Was expecting a session, but got nothing in return"
     assert my_session.uid == "bar", f"session value 'uid' should be 'bar', but was '{my_session.uid}'"
@@ -318,3 +318,26 @@ async def test_session_store_applies_its_own_limits(clock):
         quart.session[app.app_id] = {"sid": "some-session-id"}
         session = await asfquart.session.read(expiry_time=1)
     assert session.uid == "stored"
+
+
+# ---- Saving a change to the session must not fail silently ----
+
+@pytest.mark.session
+async def test_reading_marks_a_real_session_as_changed():
+    """When read() updates the session, it tells quart, so that the cookie is sent again."""
+    app = asfquart.construct("foobar", token_file=None)
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time() - 3600, "uid": "bar"}})
+    assert quart.session.modified is False
+    session = await asfquart.session.read()
+    assert session.uid == "bar"
+    assert quart.session.modified is True
+
+
+@pytest.mark.session
+async def test_session_that_cannot_be_marked_as_changed_is_an_error():
+    """If quart.session is not a session, a plain dict for instance, the update cannot be saved.
+    read() says so with an error, and does not carry on as if it had been."""
+    app = asfquart.construct("foobar", token_file=None)
+    quart.session = {app.app_id: {"uts": time.time() - 3600, "uid": "bar"}}
+    with pytest.raises(AttributeError, match="modified"):
+        await asfquart.session.read()

@@ -54,12 +54,12 @@ async def test_auth_basics():
         pass
 
     # Test with no session, should fail
-    quart.session = {}
+    quart.session = quart.sessions.SecureCookieSession({})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await requires_session()
 
     # Test with session, should work.
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar"}})
     await requires_session()
 
     # Test with a bad requirement, should fail with a TypeError.
@@ -90,17 +90,17 @@ async def test_mfa_auth():
         pass
 
     # Test MFA with no session, should fail exactly like auth_required
-    quart.session = {}
+    quart.session = quart.sessions.SecureCookieSession({})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await requires_mfa()
 
     # Test with session without MFA, should fail.
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar"}})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NO_MFA)):
         await requires_mfa()
 
     # Test with session with MFA, should work.
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "mfa": True}})
     await requires_mfa()
 
 
@@ -128,12 +128,12 @@ async def test_role_auth():
         pass
 
     # Test role with no session, should fail exactly like auth_required
-    quart.session = {}
+    quart.session = quart.sessions.SecureCookieSession({})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await test_committer_auth()
 
     # Test with session , should work
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar"}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar"}})
     await test_committer_auth()
 
     # Test with a role we don't have, should fail
@@ -141,16 +141,16 @@ async def test_role_auth():
         await test_member_auth()
 
     # Test with for both member and chair, while only being member. should pass on member check, fail on chair
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True}})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_CHAIR)):
         await test_member_and_chair_auth()
 
     # Test for either member of chair, should work as we have chair (but not member)
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isChair": True}})
     await test_member_or_chair_auth()
 
     # Test for both member and chair, when we are both. should work.
-    quart.session = {app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "foo": "bar", "isMember": True, "isChair": True}})
     await test_member_and_chair_auth()
 
 @pytest.mark.auth
@@ -158,7 +158,7 @@ async def test_extended_auth():
     """Extended auth tests"""
     app = asfquart.construct("foobar", token_file=None)
     # These requirements need a session, as every requirement does
-    quart.session = {app.app_id: {"uts": time.time(), "uid": "bar"}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "uid": "bar"}})
 
     @asfquart.auth.require(MyR.true)
     async def test_true():
@@ -191,7 +191,7 @@ async def test_lone_auth():
 
 
 def _session(app, **fields):
-    quart.session = {app.app_id: {"uts": time.time(), "uid": "bar", **fields}}
+    quart.session = quart.sessions.SecureCookieSession({app.app_id: {"uts": time.time(), "uid": "bar", **fields}})
 
 
 @pytest.mark.auth
@@ -203,7 +203,7 @@ async def test_require_without_requirements():
     async def requires_session():
         return "ok"
 
-    quart.session = {}
+    quart.session = quart.sessions.SecureCookieSession({})
     with pytest.raises(asfquart.auth.AuthenticationFailed, match=_string_to_re(R.E_NOT_LOGGED_IN)):
         await requires_session()
 

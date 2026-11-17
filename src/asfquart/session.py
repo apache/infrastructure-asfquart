@@ -49,11 +49,11 @@ def _idle_limit(app, expiry_time=None):
 
 def _mark_session_changed() -> None:
     """Tells quart to send the session cookie again. It notices a new value being set in the
-    session, but not a change inside a value that is already there."""
-    try:
-        quart.session.modified = True
-    except AttributeError:
-        pass  # Not a quart session (a plain dict, in a test): there is no cookie to send
+    session, but not a change inside a value that is already there.
+
+    Every quart session has this attribute. If quart.session is something that has not, such as a
+    plain dict, this raises: the change could not be saved, and that must not pass unnoticed."""
+    quart.session.modified = True
 
 
 def _session_expired(app, session_dict: dict, now: float, expiry_time=None) -> bool:
