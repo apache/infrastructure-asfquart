@@ -30,6 +30,16 @@ async def some_endpoint():
     return do_something()
 ```
 
+`asfquart.APP` is `None` until `construct()` has been called, though it is typed as the app.
+Code that also runs in a process with no app, such as a worker or a script, calls
+`asfquart.app_or_none()`, which is typed as returning the app or `None`:
+
+```python
+app = asfquart.app_or_none()
+if app is not None:
+    app.add_background_task(notify)
+```
+
 ## One process
 
 An asfquart application runs as one process: one instance, served by one worker. Do not give

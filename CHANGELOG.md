@@ -111,6 +111,10 @@ Changes in 0.1.13:
    least recently used lookup being dropped first (#95).
  - A bearer token presented when no `token_handler` is registered is no longer printed to stdout; a
    warning without the token is logged instead (#85).
+ - A `Bearer` header with no token in it, such as `Bearer a=b` or a bare `Bearer`, is no session,
+   and the `token_handler` is not called. It was called with `None` or an empty string.
+ - `/auth` raises a `TypeError` naming the class when a session store's session is neither a
+   dictionary nor has `model_dump()`. It was an error from quart that did not say why.
  - An `Authorization` header that does not parse no longer causes an error.
 
  Requests and responses
@@ -142,6 +146,17 @@ Changes in 0.1.13:
  - `import asfquart` now imports `asfquart.auth` as well.
  - `run()` prints an `https://` URL when a certfile is given.
  - Python 3.14 is tested and listed as supported.
+ - The package is typed and ships a `py.typed` marker, so an app's type checker now reads
+   asfquart's own annotations. It is checked with pyright in CI. What an app's checker may newly
+   report:
+   - `session.read()` returns a `SessionProtocol` or `None`. Reading `fullname`, `email` or
+     `projects` needs an `isinstance(session, ClientSession)` first.
+   - `asfquart.APP` is typed as a `QuartApp`, though it is `None` until `construct()` is called.
+     Code that also runs where there is no app calls `asfquart.app_or_none()`, which is new and
+     is typed as `QuartApp | None`.
+   - `auth.require` and `use_template` keep the signature of the endpoint they decorate, so a
+     call to it with the wrong arguments is now seen.
+   - New type aliases: `auth.Requirement` and `base.TokenHandler`.
  - Packaging moved from poetry to uv (`uv_build` backend, `uv.lock`); tests run on pytest 9 with
    pytest-asyncio 1.x; Dependabot keeps dependencies and GitHub Actions current.
 

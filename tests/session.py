@@ -31,6 +31,30 @@ async def test_bearer_token_is_not_logged(caplog, capsys):
     assert "no token handler is registered" in caplog.text
 
 
+@pytest.mark.session
+@pytest.mark.parametrize("handler_is_async", [True, False])
+async def test_token_handler_is_not_asked_without_a_token(handler_is_async):
+    """A Bearer header with no token in it is no credential: the handler is never given None or an empty string"""
+    app = asfquart.construct("bearer_no_token", token_file=None)
+    seen = []
+
+    def sync_handler(token):
+        seen.append(token)
+        return {"uid": "roleaccount"}
+
+    async def async_handler(token):
+        return sync_handler(token)
+
+    app.token_handler = async_handler if handler_is_async else sync_handler
+    for header in ("Bearer a=b", "Bearer x=y, z=w", "Bearer "):
+        async with app.test_request_context("/", headers={"Authorization": header}):
+            assert await asfquart.session.read() is None
+    assert seen == []
+    async with app.test_request_context("/", headers={"Authorization": "Bearer abc=="}):
+        assert (await asfquart.session.read()).uid == "roleaccount"
+    assert seen == ["abc=="]
+
+
 # ---- Time limits for a session that is kept in the cookie ----
 
 DAY = 86400

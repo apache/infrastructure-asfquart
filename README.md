@@ -139,6 +139,7 @@ Linting and formatting, with the rules in `pyproject.toml`:
 ```shell
 uv run --group lint ruff check
 uv run --group lint ruff format
+uv run --group lint pyright
 ```
 
 Building the package:

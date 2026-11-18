@@ -29,13 +29,13 @@ DEFAULT_MAX_SESSION_IDLE = 86400 * 7
 SESSION_REFRESH_INTERVAL = 60
 
 
-def _session_limit(app, name: str, default: int):
+def _session_limit(app: base.QuartApp, name: str, default: int) -> float:
     """A session time limit from the app's config, in seconds. 0 means that there is no limit."""
     value = app.cfg.get(name)
     return default if value is None else value
 
 
-def _timestamp(session_dict: dict, name: str):
+def _timestamp(session_dict: dict[str, typing.Any], name: str) -> float | None:
     """A timestamp from a stored session, or None if it does not have a usable one."""
     value = session_dict.get(name)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -43,7 +43,7 @@ def _timestamp(session_dict: dict, name: str):
     return value
 
 
-def _idle_limit(app, expiry_time=None):
+def _idle_limit(app: base.QuartApp, expiry_time: float | None = None) -> float:
     """The idle limit in effect, in seconds: expiry_time if given, and otherwise MAX_SESSION_IDLE,
     where 0 means that there is none."""
     if expiry_time is not None:
@@ -60,7 +60,9 @@ def _mark_session_changed() -> None:
     quart.session.modified = True
 
 
-def _session_expired(app, session_dict: dict, now: float, expiry_time=None) -> bool:
+def _session_expired(
+    app: base.QuartApp, session_dict: dict[str, typing.Any], now: float, expiry_time: float | None = None
+) -> bool:
     """Tests a stored session against the time limits. expiry_time, if given, is the idle limit
     for this one test, and is used in place of MAX_SESSION_IDLE."""
     updated = _timestamp(session_dict, "uts") or 0
@@ -77,7 +79,7 @@ def _session_expired(app, session_dict: dict, now: float, expiry_time=None) -> b
     return False
 
 
-def _created_at(app, session_data: dict, now: float, new_session: bool) -> float:
+def _created_at(app: base.QuartApp, session_data: dict[str, typing.Any], now: float, new_session: bool) -> float:
     """The creation time for a session that is about to be written to the cookie.
 
     Writing to the session of the user who is logged in changes that session, and does not start
@@ -143,11 +145,11 @@ def _old_name(new: str) -> property:
     """A ClientSession attribute under its old name, which warns and then reads or sets the new one"""
     message = f"ClientSession.{OLD_NAMES[new]} is deprecated, use {new}"
 
-    def get(self):
+    def get(self: "ClientSession") -> bool:
         warnings.warn(message, DeprecationWarning, stacklevel=2)
         return getattr(self, new)
 
-    def set_(self, value):
+    def set_(self: "ClientSession", value: bool) -> None:
         warnings.warn(message, DeprecationWarning, stacklevel=2)
         setattr(self, new, value)
 
@@ -160,28 +162,31 @@ class ClientSession(dict):
     isRoot = _old_name("is_root")  # noqa: N815
     isRole = _old_name("is_role")  # noqa: N815
 
-    def __init__(self, raw_data: dict):
+    def __init__(self, raw_data: dict[str, typing.Any]) -> None:
         """Initializes a client session from a raw dict. ClientSession is a subclassed dict, so that
         we can send it to quart in a format it can render."""
         super().__init__()
-        self.uid = raw_data.get("uid")
-        self.dn = raw_data.get("dn")
-        self.fullname = raw_data.get("fullname")
-        self.email = raw_data.get("email", f"{self.uid}@apache.org")
-        self.is_member = raw_data.get("isMember", False)
-        self.is_chair = raw_data.get("isChair", False)
-        self.is_root = raw_data.get("isRoot", False)
-        self.committees = raw_data.get("pmcs", [])
-        self.projects = raw_data.get("projects", [])
-        self.mfa = raw_data.get("mfa", False)
-        self.is_role = raw_data.get("roleaccount", False)
-        self.metadata = raw_data.get("metadata", {})  # This can contain whatever specific metadata the app needs
+        self.uid: str | None = raw_data.get("uid")
+        self.dn: str | None = raw_data.get("dn")
+        self.fullname: str | None = raw_data.get("fullname")
+        self.email: str = raw_data.get("email", f"{self.uid}@apache.org")
+        self.is_member: bool = raw_data.get("isMember", False)
+        self.is_chair: bool = raw_data.get("isChair", False)
+        self.is_root: bool = raw_data.get("isRoot", False)
+        self.committees: list[str] = raw_data.get("pmcs", [])
+        self.projects: list[str] = raw_data.get("projects", [])
+        self.mfa: bool = raw_data.get("mfa", False)
+        self.is_role: bool = raw_data.get("roleaccount", False)
+        # This can contain whatever specific metadata the app needs
+        self.metadata: dict[str, typing.Any] = raw_data.get("metadata", {})
         # Update the external dict representation with internal values. Its keys keep the old
         # names: they are what /auth sends, and what the OAuth provider calls them.
         self.update({OLD_NAMES.get(name, name): value for name, value in self.__dict__.items()})
 
 
-async def read(expiry_time=None, app=None):  # noqa: C901
+async def read(  # noqa: C901
+    expiry_time: float | None = None, app: base.QuartApp | None = None
+) -> SessionProtocol | None:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session.
 
@@ -238,19 +243,24 @@ async def read(expiry_time=None, app=None):  # noqa: C901
     elif bool(quart.request) and "Authorization" in quart.request.headers and quart.request.authorization:
         match quart.request.authorization.type:
             case "bearer":  # Role accounts, PATs - TBD
+                # werkzeug gives no token for "Bearer a=b", which it reads as parameters, and an
+                # empty one for a bare "Bearer". Neither is a credential, so the handler isn't asked.
+                token = quart.request.authorization.token
+                if not token:
+                    return None
                 if app.token_handler:
                     if not callable(app.token_handler):
                         raise TypeError("app.token_handler is not a callable function.")
                     session_dict = None  # Blank, in case we don't have a working callback.
                     # Async token handler?
                     if inspect.iscoroutinefunction(app.token_handler):
-                        session_dict = await app.token_handler(quart.request.authorization.token)
+                        session_dict = await app.token_handler(token)
                     # Sync handler?
                     elif callable(app.token_handler):
-                        session_dict = app.token_handler(quart.request.authorization.token)
+                        session_dict = app.token_handler(token)
                     # If token handler returns a dict, we have a session and should set it up
                     if session_dict:
-                        return ClientSession(session_dict)
+                        return ClientSession(session_dict)  # pyright: ignore[reportArgumentType] - not an awaitable by here
                 else:
                     # The token is a credential, and must not end up in the log
                     LOGGER.warning("Bearer token presented, but no token handler is registered")
@@ -266,7 +276,7 @@ async def read(expiry_time=None, app=None):  # noqa: C901
                 try:
                     auth_user = quart.request.authorization.parameters["username"]
                     auth_pwd = quart.request.authorization.parameters["password"]
-                    ldap_client = ldap.LDAPClient(auth_user, auth_pwd)
+                    ldap_client = ldap.LDAPClient(auth_user, auth_pwd)  # pyright: ignore[reportArgumentType] - it refuses None
                     ldap_affiliations = await ldap_client.get_affiliations()
                     # Convert to the usual session dict. TODO: add a single standardized parser/class for sessions
                     session_dict = {
@@ -283,7 +293,7 @@ async def read(expiry_time=None, app=None):  # noqa: C901
                 raise base.ASFQuartException("Not implemented yet", errorcode=501)
 
 
-def write(session_data: dict, app=None, new_session: bool = False):
+def write(session_data: dict[str, typing.Any], app: base.QuartApp | None = None, new_session: bool = False) -> None:
     """Sets a cookie-based user session for this app.
 
     Writing the session of the user who is already logged in keeps its creation time, so that
@@ -304,7 +314,9 @@ def write(session_data: dict, app=None, new_session: bool = False):
     quart.session[cookie_id] = dict_copy
 
 
-async def awrite(session_data: dict, app=None, new_session: bool = False):
+async def awrite(
+    session_data: dict[str, typing.Any], app: base.QuartApp | None = None, new_session: bool = False
+) -> None:
     """Async version of write() for use with async session stores. With a store, every call
     creates a new session in it; new_session only matters for a session kept in the cookie."""
 
@@ -329,7 +341,7 @@ async def awrite(session_data: dict, app=None, new_session: bool = False):
         quart.session[cookie_id] = dict_copy
 
 
-def clear(app=None):
+def clear(app: base.QuartApp | None = None) -> None:
     """Clears a session."""
 
     if app is None:
@@ -341,7 +353,7 @@ def clear(app=None):
     quart.session.pop(app.app_id, None)
 
 
-async def aclear(app=None):
+async def aclear(app: base.QuartApp | None = None) -> None:
     """Async version of clear() for use with async session stores."""
 
     if app is None:
@@ -357,7 +369,7 @@ async def aclear(app=None):
     quart.session.pop(cookie_id, None)
 
 
-async def areplace(session_object: SessionProtocol, app=None):
+async def areplace(session_object: SessionProtocol, app: base.QuartApp | None = None) -> None:
     """Replaces the current session with a pre-constructed session object."""
 
     if app is None:

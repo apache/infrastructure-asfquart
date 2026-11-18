@@ -20,6 +20,7 @@ be anything and the .name property treats it as arbitrary.
 """
 
 import asyncio
+import collections.abc
 import logging
 import os
 import pathlib
@@ -28,19 +29,21 @@ import secrets
 import signal
 import stat
 import sys
+import typing
 
 import asfpy.twatcher
 import easydict
 import ezt
 import hypercorn.utils
-import quart  # implies .app and .utils
+import quart  # implies .app
+import quart.utils
 import watchfiles
 import yaml
 
 from . import utils
 
 try:
-    ExceptionGroup
+    ExceptionGroup  # pyright: ignore[reportUnboundVariable, reportUnusedExpression] - tests for the builtin
 except NameError:
     # This version does not have an ExceptionGroup (introduced in
     # Python 3.11). Somebody (hypercorn) might be using a backport
@@ -49,13 +52,20 @@ except NameError:
     # won't be throwing ExceptionGroup (of any form) at all, which
     # means our catching it will be a no-op.
     if sys.version_info < (3, 11):
-        from exceptiongroup import ExceptionGroup
+        from exceptiongroup import ExceptionGroup  # pyright: ignore[reportMissingImports] - Python 3.10 only
 
 LOGGER = logging.getLogger(__name__)
+
+_P = typing.ParamSpec("_P")
+_R = typing.TypeVar("_R")
 SECRETS_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600, read/write for this user only
 SECRETS_FILE_UMASK = 0o777 ^ SECRETS_FILE_MODE  # Prevents existing umask from mangling the mode
 CONFIG_FNAME = "config.yaml"
 TOKEN_FNAME = "apptoken.txt"  # noqa: S105 - a file name, not a secret
+
+# A handler for bearer tokens, sync or async: it is given the token, and returns the session
+# data for it, or None. See docs/sessions.md.
+TokenHandler = typing.Callable[[str], dict[str, typing.Any] | typing.Awaitable[dict[str, typing.Any] | None] | None]
 
 # The shape of an ASF user id: lower case letters, digits, hyphens and underscores, starting with a
 # letter, and at least two characters. This is the rule of AsfUid in atr/models/safe.py of
@@ -76,7 +86,7 @@ ASF_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 class ASFQuartException(Exception):  # noqa: N818 - public name
     """Global ASFQuart exception with a message and an error code, for the HTTP response."""
 
-    def __init__(self, message: str = "An error occurred", errorcode: int = 500):
+    def __init__(self, message: str = "An error occurred", errorcode: int = 500) -> None:
         self.message = message
         self.errorcode = errorcode
         super().__init__(self.message)
@@ -92,9 +102,9 @@ class QuartApp(quart.Quart):
         app_dir: str | None = None,
         cfg_file: str | None = None,
         token_file: str | None = TOKEN_FNAME,
-        *args,
-        **kw,
-    ):
+        *args: typing.Any,
+        **kw: typing.Any,
+    ) -> None:
         """Construct an ASFQuart web application.
 
         Arguments:
@@ -118,11 +128,13 @@ class QuartApp(quart.Quart):
         self.cfg = easydict.EasyDict()
 
         # token handler callback for PATs - see docs/sessions.md
-        self.token_handler = None  # Default to no PAT handler available.
+        self.token_handler: TokenHandler | None = None  # Default to no PAT handler available.
         # HTTP Basic authentication checks a password against LDAP, with no second factor, so an
         # app has to ask for it: construct(..., basic_auth=True). See docs/sessions.md.
         self.basic_auth = False
-        self.sessions = None
+        # A session store, or None. Any, as a store is duck-typed and has methods of the app's own:
+        # see docs/session-stores.md.
+        self.sessions: typing.Any = None
 
         if token_file is not None:
             # Path.__truediv__ internally handles the case of absolute / relative path segments
@@ -192,14 +204,14 @@ class QuartApp(quart.Quart):
     def runx(
         self,
         /,
-        host="0.0.0.0",  # noqa: S104 - the default has always been all interfaces
-        port=None,
-        debug=True,
-        loop=None,
-        certfile=None,
-        keyfile=None,
-        extra_files=frozenset(),  # OK, because immutable
-    ):
+        host: str = "0.0.0.0",  # noqa: S104 - the default has always been all interfaces
+        port: int | None = None,
+        debug: bool = True,
+        loop: asyncio.AbstractEventLoop | None = None,
+        certfile: str | None = None,
+        keyfile: str | None = None,
+        extra_files: collections.abc.Set[str | pathlib.Path] = frozenset(),  # OK, because immutable
+    ) -> None:
         """Extended version of Quart.run()
 
         LOOP is the loop this app should run within. One will be constructed,
@@ -249,7 +261,9 @@ class QuartApp(quart.Quart):
         self.run_forever(loop, task)
         # Being here, means graceful exit.
 
-    def factory_trigger(self, loop, extra_files=frozenset()):
+    def factory_trigger(
+        self, loop: asyncio.AbstractEventLoop, extra_files: collections.abc.Set[str | pathlib.Path] = frozenset()
+    ) -> typing.Callable[[], typing.Coroutine[typing.Any, typing.Any, None]]:
         """Factory for an AWAITABLE that handles special exceptions.
 
         The LOOP normally ignores all signals. This method will make the
@@ -264,13 +278,13 @@ class QuartApp(quart.Quart):
 
         shutdown_event = asyncio.Event()
 
-        def _shutdown_handler(*_) -> None:
+        def _shutdown_handler(*_: object) -> None:
             shutdown_event.set()
 
         loop.add_signal_handler(signal.SIGTERM, _shutdown_handler)
         loop.add_signal_handler(signal.SIGINT, _shutdown_handler)
 
-        async def shutdown_wait():
+        async def shutdown_wait() -> typing.NoReturn:
             "Log a nice message when we're signalled to shut down."
             await shutdown_event.wait()
             LOGGER.info("SHUTDOWN: Performing graceful exit...")
@@ -279,12 +293,12 @@ class QuartApp(quart.Quart):
 
         restart_event = asyncio.Event()
 
-        def _restart_handler(*_) -> None:
+        def _restart_handler(*_: object) -> None:
             restart_event.set()
 
         loop.add_signal_handler(signal.SIGUSR2, _restart_handler)
 
-        async def restart_wait():
+        async def restart_wait() -> typing.NoReturn:
             "Log a nice message when we're signalled to restart."
             await restart_event.wait()
             LOGGER.info("RESTART: Performing process restart...")
@@ -308,12 +322,12 @@ class QuartApp(quart.Quart):
 
         gathered = utils.CancellableTask(aw, loop=loop, name=f"Trigger:{self.app_id}")
 
-        async def await_gathered():
+        async def await_gathered() -> None:
             await gathered.task
 
         return await_gathered  # factory to create an awaitable (coro)
 
-    async def watch(self, extra_files=frozenset()):
+    async def watch(self, extra_files: collections.abc.Set[str | pathlib.Path] = frozenset()) -> None:
         "Watch all known .py files, plus some extra files (eg. configs)."
 
         py_files = set(getattr(m, "__file__", None) for m in sys.modules.values())
@@ -329,7 +343,7 @@ class QuartApp(quart.Quart):
         # quiet down the watchfiles logger
         logging.getLogger("watchfiles.main").setLevel(logging.INFO)
 
-        async for changes in watchfiles.awatch(*watched_files):
+        async for changes in watchfiles.awatch(*watched_files):  # pyright: ignore[reportArgumentType] - None was removed above
             for event in changes:
                 if (
                     event[0] == watchfiles.Change.modified
@@ -340,7 +354,7 @@ class QuartApp(quart.Quart):
                     raise quart.utils.MustReloadError
         # NOTREACHED
 
-    def run_forever(self, loop, task):
+    def run_forever(self, loop: asyncio.AbstractEventLoop, task: typing.Awaitable[object]) -> None:
         "Run the application until exit, then cleanly shut down."
 
         # Note: this logic is copied from quart/app.py
@@ -350,7 +364,7 @@ class QuartApp(quart.Quart):
         except quart.utils.MustReloadError:
             reload_ = True
             LOGGER.debug("FOUND: MustReloadError")
-        except ExceptionGroup as e:
+        except ExceptionGroup as e:  # pyright: ignore[reportPossiblyUnboundVariable] - the builtin or the backport
             reload_ = e.subgroup(quart.utils.MustReloadError) is not None
             LOGGER.debug(f"FOUND: ExceptionGroup, reload_={reload_}")
         finally:
@@ -363,11 +377,18 @@ class QuartApp(quart.Quart):
         if reload_:
             quart.utils.restart()
 
-    def load_template(self, tpath, base_format=ezt.FORMAT_HTML):
+    def load_template(self, tpath: str | os.PathLike[str], base_format: str = ezt.FORMAT_HTML) -> ezt.Template:
         # Use str() to avoid passing Path instances.
         return self.tw.load_template(str(self.app_dir / tpath), base_format=base_format)
 
-    def use_template(self, path_or_T, base_format=ezt.FORMAT_HTML):  # noqa: N803 - public argument name
+    def use_template(
+        self,
+        path_or_T: str | os.PathLike[str] | ezt.Template,  # noqa: N803 - public argument name
+        base_format: str = ezt.FORMAT_HTML,
+    ) -> typing.Callable[
+        [typing.Callable[_P, typing.Awaitable[_R]]],
+        typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R | str]],
+    ]:
         # Decorator to use a template, specified by path or provided.
 
         if isinstance(path_or_T, ezt.Template):
@@ -375,7 +396,7 @@ class QuartApp(quart.Quart):
 
         return utils.use_template(self.load_template(path_or_T, base_format))
 
-    def add_runner(self, func, name=None):
+    def add_runner(self, func: typing.Callable[[], typing.Awaitable[object]], name: str | None = None) -> None:
         "Add a long-running task, with cancellation/cleanup."
 
         # NOTES:
@@ -403,7 +424,7 @@ class QuartApp(quart.Quart):
         # the shutdown process.
 
         @self.while_serving
-        async def perform_runner():
+        async def perform_runner() -> typing.AsyncGenerator[None, None]:
             ctask = utils.CancellableTask(func(), name=name)
             # print('RUNNER STARTED:', ctask.task)
 
@@ -421,10 +442,10 @@ def construct(
     token_file: str | None = TOKEN_FNAME,
     oauth: bool | str = True,
     force_login: bool = True,
-    *args,
+    *args: typing.Any,
     basic_auth: bool = False,
-    **kw,
-):
+    **kw: typing.Any,
+) -> QuartApp:
     """Construct an ASFQuart web application.
 
     Arguments:
@@ -467,7 +488,7 @@ def construct(
     app.basic_auth = basic_auth
 
     @app.errorhandler(ASFQuartException)  # ASFQuart exception handler
-    async def handle_exception(error):
+    async def handle_exception(error: ASFQuartException) -> quart.Response:
         # If an error is thrown before the request body has been consumed, eat it quietly.
         if not quart.request.body._complete.is_set():  # pylint: disable=protected-access
             async for _data in quart.request.body:
