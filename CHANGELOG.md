@@ -93,6 +93,10 @@ Changes in 0.1.13:
    `ClientSession` - with a session store it may be something else. The attributes are listed in
    `session.SessionProtocol`, and `auth.require` raises a `TypeError` naming the attribute if a
    session is missing one (#44).
+ - The session attributes `isMember`, `isChair`, `isRoot` and `isRole` are now `is_member`,
+   `is_chair`, `is_root` and `is_role`. The old names still work, with a `DeprecationWarning`, on a
+   `ClientSession` and on a session store's own class. A `ClientSession`'s dictionary keys keep
+   the old names, so what `/auth` returns is unchanged.
  - HTTP Basic authentication is off by default (see the warning above), and is turned on with the
    new `basic_auth` argument of `construct()`. When it is off, an `Authorization: Basic` header is
    a `401 Basic authentication is not enabled`, and LDAP is not contacted. `basic_auth=True`

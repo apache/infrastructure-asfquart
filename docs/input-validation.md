@@ -185,7 +185,7 @@ then. The limits themselves are described in [Session handling](sessions.md).
 Everything else about a stored session, its time limits included, is the store's to check.
 See [Session stores](session-stores.md).
 
-The contents of a session (`uid`, `isMember`, `committees` and the rest) are not checked
+The contents of a session (`uid`, `is_member`, `committees` and the rest) are not checked
 when it is read. They were put there by the application or by asfquart, and the signature
 says that they have not been changed since.
 
@@ -245,7 +245,7 @@ Some can only be checked when they are used:
 | `app.token_handler` | Callable | `TypeError` when a bearer token is presented | `session.py` |
 | The session object given to `session.areplace()` | Has a `uid` attribute | `TypeError`; the user's session is left as it was | `session.py` |
 | The session that `@asfquart.auth.require` tests | Has the attribute that each requirement reads | `TypeError`; the endpoint is not run | `auth.py` |
-| The value a requirement reads, such as `isMember` | Is `True`, and not merely something true | The requirement is not met | `auth.py` |
+| The value a requirement reads, such as `is_member` | Is `True`, and not merely something true | The requirement is not met | `auth.py` |
 
 A callback host is matched against a pattern as a whole, not parsed:
 

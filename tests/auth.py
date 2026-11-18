@@ -2,6 +2,7 @@
 
 import re
 import time
+import warnings
 
 import pytest
 import quart
@@ -388,7 +389,7 @@ class _FullSession:
 
     def __init__(self, **values):
         self.uid = "testuser"
-        self.isMember = self.isChair = self.isRoot = self.isRole = self.mfa = False
+        self.is_member = self.is_chair = self.is_root = self.is_role = self.mfa = False
         self.committees = []
         self.__dict__.update(values)
 
@@ -399,15 +400,15 @@ class _OwnNamesSession:
     def __init__(self):
         self.uid = "testuser"
         self.mfa = True
-        self.is_member = True
+        self.member = True
         self.member_committees = ["httpd"]
 
 
 MISSING_ATTRIBUTES = [
-    (R.member, "isMember"),
-    (R.chair, "isChair"),
-    (R.root, "isRoot"),
-    (R.roleacct, "isRole"),
+    (R.member, "is_member"),
+    (R.chair, "is_chair"),
+    (R.root, "is_root"),
+    (R.roleacct, "is_role"),
     (R.pmc_member, "committees"),
 ]
 
@@ -425,16 +426,66 @@ def test_session_protocol():
     "requirement, values",
     [
         (R.mfa_protected, {"mfa": True}),
-        (R.member, {"isMember": True}),
-        (R.chair, {"isChair": True}),
-        (R.root, {"isRoot": True}),
-        (R.roleacct, {"isRole": True}),
+        (R.member, {"is_member": True}),
+        (R.chair, {"is_chair": True}),
+        (R.root, {"is_root": True}),
+        (R.roleacct, {"is_role": True}),
         (R.pmc_member, {"committees": ["httpd"]}),
     ],
 )
 def test_requirements_work_with_other_session_classes(requirement, values):
     assert requirement(_FullSession(**values))[0] is True
     assert requirement(_FullSession())[0] is False
+
+
+OLD_NAMES = [
+    (R.member, "is_member", "isMember"),
+    (R.chair, "is_chair", "isChair"),
+    (R.root, "is_root", "isRoot"),
+    (R.roleacct, "is_role", "isRole"),
+]
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("requirement, new, old", OLD_NAMES)
+def test_client_session_old_names_still_work(requirement, new, old):
+    """The camelCase names read and set the new attribute, with a DeprecationWarning"""
+    session = asfquart.session.ClientSession({"uid": "testuser"})
+    with pytest.warns(DeprecationWarning, match=f"{old} is deprecated, use {new}"):
+        assert getattr(session, old) is False
+    with pytest.warns(DeprecationWarning, match=old):
+        setattr(session, old, True)
+    assert getattr(session, new) is True
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # the new name, and the requirement that reads it, don't warn
+        assert requirement(session)[0] is True
+
+
+@pytest.mark.auth
+def test_client_session_dictionary_keeps_the_old_keys():
+    """What /auth sends is unchanged"""
+    session = asfquart.session.ClientSession({"uid": "testuser", "isMember": True, "roleaccount": True})
+    assert session["isMember"] is True and session["isRole"] is True
+    assert {"isMember", "isChair", "isRoot", "isRole"} <= set(session)
+    assert not {"is_member", "is_chair", "is_root", "is_role"} & set(session)
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize("requirement, new, old", OLD_NAMES)
+def test_requirements_read_the_old_name_from_other_session_classes(requirement, new, old):
+    """A store's session class that still has the camelCase name works, with a DeprecationWarning"""
+
+    class OldNamesSession:
+        uid = "testuser"
+
+    session = OldNamesSession()
+    setattr(session, old, True)
+    with pytest.warns(DeprecationWarning, match=f"OldNamesSession has '{old}'.*rename it to '{new}'"):
+        assert requirement(session)[0] is True
+    setattr(session, new, False)  # the new name wins once it is there
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert requirement(session)[0] is False
 
 
 @pytest.mark.auth

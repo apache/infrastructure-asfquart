@@ -118,8 +118,8 @@ Think before turning it on:
 - **The application sees the password**, on every request.
 - **Every request is checked against LDAP**, and so is every wrong guess. asfquart does not
   limit how often a client may try, so that has to be done in front of the application.
-- **The session has less in it**: `uid`, `committees` and `projects`. `isMember`, `isChair`
-  and `isRoot` are not looked up, so the requirements that read them are not met.
+- **The session has less in it**: `uid`, `committees` and `projects`. `is_member`, `is_chair`
+  and `is_root` are not looked up, so the requirements that read them are not met.
 
 For a script or a service, a token is the better fit; see the next section. For how the
 username and password are checked, and what happens when LDAP cannot be reached, see

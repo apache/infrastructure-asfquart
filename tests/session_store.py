@@ -541,7 +541,7 @@ def test_client_session_does_not_turn_back_into_its_data():
     data = {"uid": "testuser", "pmcs": ["httpd"], "roleaccount": True}
     session = asfquart.session.ClientSession(data)
     assert session.committees == ["httpd"]
-    assert session.isRole is True
+    assert session.is_role is True
     again = asfquart.session.ClientSession(session)
     assert again.committees == []
-    assert again.isRole is False
+    assert again.is_role is False

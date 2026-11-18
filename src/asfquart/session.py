@@ -8,6 +8,7 @@ import logging
 import secrets
 import time
 import typing
+import warnings
 
 import quart
 
@@ -111,21 +112,20 @@ class SessionProtocol(typing.Protocol):
     """
 
     # Properties, as these are only ever read - a class can then use a narrower type, e.g. list[str].
-    # The names are ClientSession's, hence the N802s.
     @property
     def uid(self) -> str | None: ...  # None only if the session was built from data with no uid
 
     @property
-    def isMember(self) -> bool: ...  # noqa: N802 - Requirements.member
+    def is_member(self) -> bool: ...  # Requirements.member
 
     @property
-    def isChair(self) -> bool: ...  # noqa: N802 - Requirements.chair
+    def is_chair(self) -> bool: ...  # Requirements.chair
 
     @property
-    def isRoot(self) -> bool: ...  # noqa: N802 - Requirements.root
+    def is_root(self) -> bool: ...  # Requirements.root
 
     @property
-    def isRole(self) -> bool: ...  # noqa: N802 - Requirements.roleacct
+    def is_role(self) -> bool: ...  # Requirements.roleacct
 
     @property
     def mfa(self) -> bool: ...  # Requirements.mfa_protected
@@ -134,7 +134,32 @@ class SessionProtocol(typing.Protocol):
     def committees(self) -> typing.Collection[str]: ...  # Requirements.pmc_member
 
 
+# These four were camelCase until 0.1.13: new name -> old name. The old names still work, see
+# ClientSession and auth.Requirements.
+OLD_NAMES = {"is_member": "isMember", "is_chair": "isChair", "is_root": "isRoot", "is_role": "isRole"}
+
+
+def _old_name(new: str) -> property:
+    """A ClientSession attribute under its old name, which warns and then reads or sets the new one"""
+    message = f"ClientSession.{OLD_NAMES[new]} is deprecated, use {new}"
+
+    def get(self):
+        warnings.warn(message, DeprecationWarning, stacklevel=2)
+        return getattr(self, new)
+
+    def set_(self, value):
+        warnings.warn(message, DeprecationWarning, stacklevel=2)
+        setattr(self, new, value)
+
+    return property(get, set_)
+
+
 class ClientSession(dict):
+    isMember = _old_name("is_member")  # noqa: N815
+    isChair = _old_name("is_chair")  # noqa: N815
+    isRoot = _old_name("is_root")  # noqa: N815
+    isRole = _old_name("is_role")  # noqa: N815
+
     def __init__(self, raw_data: dict):
         """Initializes a client session from a raw dict. ClientSession is a subclassed dict, so that
         we can send it to quart in a format it can render."""
@@ -143,16 +168,17 @@ class ClientSession(dict):
         self.dn = raw_data.get("dn")
         self.fullname = raw_data.get("fullname")
         self.email = raw_data.get("email", f"{self.uid}@apache.org")
-        self.isMember = raw_data.get("isMember", False)
-        self.isChair = raw_data.get("isChair", False)
-        self.isRoot = raw_data.get("isRoot", False)
+        self.is_member = raw_data.get("isMember", False)
+        self.is_chair = raw_data.get("isChair", False)
+        self.is_root = raw_data.get("isRoot", False)
         self.committees = raw_data.get("pmcs", [])
         self.projects = raw_data.get("projects", [])
         self.mfa = raw_data.get("mfa", False)
-        self.isRole = raw_data.get("roleaccount", False)
+        self.is_role = raw_data.get("roleaccount", False)
         self.metadata = raw_data.get("metadata", {})  # This can contain whatever specific metadata the app needs
-        # Update the external dict representation with internal values
-        self.update(self.__dict__.items())
+        # Update the external dict representation with internal values. Its keys keep the old
+        # names: they are what /auth sends, and what the OAuth provider calls them.
+        self.update({OLD_NAMES.get(name, name): value for name, value in self.__dict__.items()})
 
 
 async def read(expiry_time=None, app=None):  # noqa: C901

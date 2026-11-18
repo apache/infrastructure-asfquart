@@ -10,6 +10,24 @@ import warnings
 from . import base, session
 
 
+def _read(client_session: typing.Any, name: str):
+    """Reads an attribute of the session that was camelCase until 0.1.13. A session class that
+    still has the old name works, with a warning."""
+    try:
+        return getattr(client_session, name)
+    except AttributeError as e:
+        old = session.OLD_NAMES[name]
+        # Raise the original, naming the new attribute, unless it's the old name that is there
+        if e.obj is not client_session or not hasattr(client_session, old):
+            raise
+        warnings.warn(
+            f"Session type {type(client_session).__name__} has {old!r}, which is deprecated: rename it to {name!r}",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return getattr(client_session, old)
+
+
 class Requirements:
     """Various pre-defined access requirements.
 
@@ -44,19 +62,19 @@ class Requirements:
     def member(cls, client_session: session.SessionProtocol):
         """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
-        return client_session.isMember is True, cls.E_NOT_MEMBER
+        return _read(client_session, "is_member") is True, cls.E_NOT_MEMBER
 
     @classmethod
     def chair(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
-        return client_session.isChair is True, cls.E_NOT_CHAIR
+        return _read(client_session, "is_chair") is True, cls.E_NOT_CHAIR
 
     @classmethod
     def root(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a member of infra-root"""
         # Anything but True will cause a failure.
-        return client_session.isRoot is True, cls.E_NOT_ROOT
+        return _read(client_session, "is_root") is True, cls.E_NOT_ROOT
 
     @classmethod
     def pmc_member(cls, client_session: session.SessionProtocol):
@@ -68,7 +86,7 @@ class Requirements:
     def roleacct(cls, client_session: session.SessionProtocol):
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
-        return client_session.isRole is True, cls.E_NOT_ROLEACCOUNT
+        return _read(client_session, "is_role") is True, cls.E_NOT_ROLEACCOUNT
 
 
 class AuthenticationFailed(base.ASFQuartException):

@@ -56,16 +56,21 @@ requirement the application uses:
 | Requirement | Reads |
 |---|---|
 | `committer` | Nothing - any session passes |
-| `member` | `isMember` |
+| `member` | `is_member` |
 | `pmc_member` | `committees` |
-| `chair` | `isChair` |
-| `root` | `isRoot` |
+| `chair` | `is_chair` |
+| `root` | `is_root` |
 | `mfa_protected` | `mfa` |
-| `roleacct` | `isRole` |
+| `roleacct` | `is_role` |
 
 These, plus `uid`, make up `asfquart.session.SessionProtocol`, which a type checker can check
 a session class against. If a session is missing an attribute that a requirement reads,
 `@asfquart.auth.require` raises a `TypeError` naming it and the endpoint isn't run.
+
+Until 0.1.13, `is_member`, `is_chair`, `is_root` and `is_role` were `isMember`, `isChair`,
+`isRoot` and `isRole`. The old names still work, with a `DeprecationWarning`, both on a
+`ClientSession` and on a session store's own class. A `ClientSession` is also a dictionary, and
+its keys keep the old names, so what `/auth` returns is unchanged.
 
 The example below shows how to cordon off specific end-points to certain groups of users:
 
