@@ -7,8 +7,6 @@ import collections.abc
 import inspect
 import warnings
 
-# What is checked of the arguments of @require, and of the session that it tests, is listed with
-# every other input validation rule in docs/input-validation.md.
 class Requirements:
     """Various pre-defined access requirements.
 

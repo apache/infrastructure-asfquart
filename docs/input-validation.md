@@ -1,11 +1,9 @@
 # Input validation rules
 
 asfquart checks some of what comes into an application, and leaves the rest to the
-application. This page lists every check asfquart makes: what is checked, the rule, what
+application. This page lists the checks asfquart makes: what is checked, the rule, what
 happens when the rule is not met, and where in the source the rule is written. It ends with
-what asfquart does *not* check, which matters as much to somebody writing an application.
-
-The rules are grouped by where the input comes from.
+what asfquart does *not* check.
 
 | Input | Comes from | Section |
 |---|---|---|
@@ -19,9 +17,8 @@ The rules are grouped by where the input comes from.
 
 ## The form of an ASF user id
 
-One rule is used in more than one place, so it comes first. An ASF user id is two or more
-characters: a lower case letter, followed by lower case letters, digits, `-` or `_`. The
-whole value must match.
+An ASF user id is two or more characters: a lower case letter, followed by lower case
+letters, digits, `-` or `_`. The whole value must match.
 
 The rule is written once, as `asfquart.base.ASF_UID_RE`. `asfquart.generics.OAUTH_UID_RE` and
 `asfquart.ldap.VALID_UID_RE` are the same pattern under the names of the two places it is
@@ -50,7 +47,12 @@ default). They are in `asfquart/generics.py`. The reasons for the callback rules
 | What | Rule | If not met |
 |---|---|---|
 | A `POST` request | `Sec-Fetch-Site` is absent, `same-origin` or `same-site` | `403`, "CSRF Protection" |
+| A logout, by `POST` or `GET` | `Sec-Fetch-Site` is absent or `same-origin`; `same-site` as well if `logout_same_site` is set | `403`, "CSRF Protection" |
+| A `GET` logout, when `logout_by_get` is off | Refused | `405`, "Log out with a POST request." |
+| A `GET` logout | A navigation in a window or tab: see below | `403`, "CSRF Protection" |
+| A `GET` logout | Not a prefetch: no `Sec-Purpose` that starts with `prefetch`, and no `Purpose` or `X-Moz` of `prefetch` | `403`, "Not prefetched" |
 | The target of `?login=` or `?logout=` | A local path: see below | `400`, "Invalid redirect URI." |
+| The target of `?login=` | Not the OAuth endpoint itself: see below | `400`, "Invalid redirect URI." |
 | A callback | Has a `code` and a `state`, neither of them empty | Not treated as a callback: the session is shown, or a `404` |
 | The `state` of a callback | A login that this application started, that has not been completed, and that has not expired (`workflow_timeout`, 900 seconds by default) | `403`, "Invalid or expired OAuth state provided." |
 | The browser of a callback | Sends the `asfquart-oauth-state` cookie that was set when this login started | `403`, the same message |
@@ -59,8 +61,14 @@ default). They are in `asfquart/generics.py`. The reasons for the callback rules
 A `state` can be used once. It is given up when it is looked at, so a callback that fails
 any later check cannot be tried again with the same `state`.
 
-A logout with a target that is refused still logs the user out. The `400` is for the
-redirect, which is not made.
+A `GET` logout that comes with a `Sec-Fetch-Site` is a navigation when `Sec-Fetch-Mode` is
+`navigate` and `Sec-Fetch-Dest` is `document`. `Sec-Fetch-Site` may then be `none` as well.
+
+A logout that is refused leaves the session alone. The reasons for the logout rules are in
+[Setting up OAuth](oauth.md#logging-out).
+
+A logout that is accepted, with a target that is refused, still logs the user out. The `400`
+is for the redirect, which is not made.
 
 ### Redirect targets
 
@@ -78,6 +86,10 @@ site (`_is_local_redirect()`):
 
 The value is checked after the query string has been decoded, so `%2F%2Fexample.org` is
 refused as `//example.org` is.
+
+A login target may also not be the OAuth endpoint itself (`_is_oauth_endpoint()`), as a
+browser would resolve it: `/x/../auth` and `/%61uth` are refused too. The reason is in
+[Setting up OAuth](oauth.md#when-the-login-starts).
 
 | Target | Accepted? |
 |---|---|
@@ -248,8 +260,7 @@ A callback host is matched against a pattern as a whole, not parsed:
 ## The values
 
 The patterns and limits named on this page, and their values. `tests/input_validation.py`
-compares this table, and the tables of examples above, with the code, so that the page
-cannot say one thing and the code another.
+compares this table, and the tables of examples above, with the code.
 
 | Name | Value |
 |---|---|
@@ -280,10 +291,11 @@ to check:
   any depth.
 - **Query string parameters** of the application's own endpoints, and **parts of the URL**
   other than the `filename` converter above.
-- **Request headers**, other than `Authorization` and, on the OAuth endpoint,
-  `Sec-Fetch-Site`. In particular asfquart does not validate `Host`: unless `callback_host`
-  is set, the OAuth callback address is built from it, so the proxy in front of the
-  application has to pass it through unchanged. See [Setting up OAuth](oauth.md).
+- **Request headers**, other than `Authorization` and, on the OAuth endpoint, the
+  `Sec-Fetch-*` and prefetch headers in the table above. In particular asfquart does not
+  validate `Host`: unless `callback_host` is set, the OAuth callback address is built from
+  it, so the proxy in front of the application has to pass it through unchanged. See
+  [Setting up OAuth](oauth.md).
 - **Uploaded files.**
 - **The fields of a session other than `uid`.** What the OAuth provider says about a user
   is stored as received, and what the application passes to `session.write()` is stored as

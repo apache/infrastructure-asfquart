@@ -68,8 +68,8 @@ TOKEN_FNAME = 'apptoken.txt'
 # here and it changes for both. An app that needs another rule for one of the two can assign a
 # pattern of its own to that name.
 #
-# This rule, and every other check that asfquart makes on its input, is listed in
-# docs/input-validation.md. Keep that page in step with the code: tests/input_validation.py compares them.
+# This rule, and the other checks that asfquart makes on its input, are listed in
+# docs/input-validation.md.
 ASF_UID_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
 
 
