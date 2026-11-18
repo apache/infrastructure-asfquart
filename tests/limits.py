@@ -2,9 +2,8 @@
 """Tests that docs/limits.md gives the limits that the code applies.
 
 The page has a table of the limits that are values in the code, and one of quart's settings.
-Both are read from the page and compared with the code and with a real app, so that the page
-cannot say one thing and the code another. The other tests here pin statements on the page
-that no other test covers."""
+Both are read from the page and compared with the code and with a real app. The other tests
+here pin statements on the page that no other test covers."""
 
 import importlib
 import inspect
