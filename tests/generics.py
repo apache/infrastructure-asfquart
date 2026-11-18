@@ -203,6 +203,29 @@ async def test_login_rejects_unsafe_redirect(target):
 
 
 @pytest.mark.generics
+@pytest.mark.parametrize("target", [
+    "/auth",
+    "/auth?logout",
+    "/auth?logout=/",
+    "/auth#x",
+    "/x/../auth?logout",
+    "/./auth?logout",
+    "/%61uth?logout",
+    "/x/%2e%2e/auth?logout",
+])
+async def test_login_rejects_the_oauth_endpoint_as_target(target):
+    """The target is gone to from the app's own page, so /auth?logout would pass as a logout the app asked for"""
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        resp = await client.get("/auth?login=" + urllib.parse.quote(target, safe=""))
+        assert resp.status_code == 400
+        assert "Invalid redirect" in (await resp.get_data()).decode()
+        resp = await client.get("/auth?login=/authors?logout")
+        assert resp.status_code == 302
+
+
+@pytest.mark.generics
 @pytest.mark.parametrize("target", UNSAFE_REDIRECTS)
 async def test_logout_rejects_unsafe_redirect(target):
     """?logout=<unsafe target> must return 400 and must not redirect."""
