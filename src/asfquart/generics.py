@@ -6,6 +6,7 @@ import functools
 import hashlib
 import hmac
 import logging
+import posixpath
 import re
 import secrets
 import ssl
@@ -199,6 +200,13 @@ def _is_local_redirect(uri: str) -> bool:
     return True
 
 
+def _is_oauth_endpoint(target: str, uri: str) -> bool:
+    """Tests whether a redirect target is the OAuth endpoint itself, once the browser has resolved
+    it: /x/../auth and /%61uth are both /auth."""
+    path = urllib.parse.unquote(urllib.parse.urlsplit(target).path)
+    return posixpath.normpath(path) == uri
+
+
 @functools.lru_cache(maxsize=None)
 def _oauth_ssl_context() -> ssl.SSLContext:
     """The TLS settings for the code exchange with the OAuth provider: the provider's certificate
@@ -331,7 +339,9 @@ def setup_oauth(
         login_uri = quart.request.args.get("login")
         logout_uri = quart.request.args.get("logout")
         if login_uri or quart.request.query_string == b"login":
-            if login_uri and not _is_local_redirect(login_uri):
+            # The target is gone to from our own page once the login completes, so one that is this
+            # endpoint would let another site ask for a logout, by way of a login
+            if login_uri and (not _is_local_redirect(login_uri) or _is_oauth_endpoint(login_uri, uri)):
                 return quart.Response(
                     status=400,
                     response="Invalid redirect URI.\n",

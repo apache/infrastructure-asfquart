@@ -41,6 +41,10 @@ On `/auth?login` or `/auth?login=/foo`, asfquart:
      because the target of a login is kept in memory until the login completes or expires.
 
    The same rule applies to the target of `/auth?logout=/foo`.
+
+   A login target may not be the OAuth endpoint itself either. The browser goes to the target
+   from the application's own page, so `/auth?login=/auth?logout` would let another site log a
+   user out by way of a login.
 2. Generates a random `state` value (`secrets.token_hex(16)`).
 3. Records, in `pending_states[state]`:
    - the time the login started,
