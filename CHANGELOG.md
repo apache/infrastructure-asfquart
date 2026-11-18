@@ -1,14 +1,10 @@
 Changes in 0.1.13:
 
- **WARNING: HTTP Basic authentication is now off by default.** In 0.1.12 and earlier, every app
- accepted an `Authorization: Basic` header with an ASF id and password, and checked them against
- LDAP. An app that depends on that must now ask for it, with
- `asfquart.construct("myapp", basic_auth=True)`, and must have the LDAP libraries installed
- (`asfquart[aioldap]`): without them, `basic_auth=True` stops the app from starting. Without
- `basic_auth=True`, a request with a Basic header is answered with `401 Basic authentication is
- not enabled`. Basic authentication takes a password with no second factor, and so was a way
- round the multi-factor authentication of an OAuth login that every app had unless it turned it
- off. See "HTTP Basic authentication" in `docs/sessions.md`.
+ **WARNING: HTTP Basic authentication is now off by default.** Until now every app accepted an
+ `Authorization: Basic` header with an ASF id and password, which is a way round the
+ multi-factor authentication of an OAuth login. An app that depends on it must pass
+ `basic_auth=True` to `asfquart.construct()` and have the LDAP libraries installed
+ (`asfquart[aioldap]`). See "HTTP Basic authentication" in `docs/sessions.md`.
 
  Sessions
  - Server-side sessions: set `app.sessions` to an async store (with `create`, `validate` and
@@ -97,10 +93,10 @@ Changes in 0.1.13:
    `ClientSession` - with a session store it may be something else. The attributes are listed in
    `session.SessionProtocol`, and `auth.require` raises a `TypeError` naming the attribute if a
    session is missing one (#44).
- - **HTTP Basic authentication is off by default**: see the warning above. The new `basic_auth`
-   argument of `construct()` turns it on. When it is off, an `Authorization: Basic` header is
-   answered with a 401, and LDAP is not contacted. `basic_auth=True` without the LDAP libraries
-   (`asfquart[aioldap]`) is a `RuntimeError` when the app is constructed; before, Basic
+ - HTTP Basic authentication is off by default (see the warning above), and is turned on with the
+   new `basic_auth` argument of `construct()`. When it is off, an `Authorization: Basic` header is
+   a `401 Basic authentication is not enabled`, and LDAP is not contacted. `basic_auth=True`
+   without the LDAP libraries is a `RuntimeError` when the app is constructed; before, Basic
    authentication then did nothing, without saying so.
  - A username for basic authentication must have the form of an ASF user id, and the password may
    not be empty; otherwise the request is a 403 and LDAP is not contacted (#128).

@@ -137,7 +137,7 @@ cookie, even if the session in it has ended.
 |---|---|---|
 | The header | Can be parsed as an `Authorization` header | Ignored: the request has no session |
 | The scheme | `Basic` or `Bearer` | `501`, "Not implemented yet" |
-| `Basic`, when the application was constructed with `basic_auth=False` | Refused | `401`, "Basic authentication is not enabled" |
+| `Basic`, unless the application was constructed with `basic_auth=True` | Refused | `401`, "Basic authentication is not enabled" |
 | The `Basic` username | In the form of an ASF user id | `403`, "Invalid credentials provided" |
 | The `Basic` password | Not empty | `403`, "Invalid credentials provided" |
 | The `Basic` credentials | Accepted by LDAP | `403`, "Invalid credentials provided" |
@@ -147,8 +147,10 @@ cookie, even if the session in it has ended.
   LDAP distinguished name, and a bind with a name and an empty password is an anonymous bind
   that many servers accept, so neither may reach LDAP unchecked.
 - If LDAP cannot be reached, the answer is a `500`, not a `403`.
-- HTTP Basic authentication needs the LDAP libraries (`asfpy[aioldap]`). Where they are not
-  installed, a `Basic` header gives no session, and no error.
+- HTTP Basic authentication is off by default, and needs the LDAP libraries
+  (`asfquart[aioldap]`). An application that sets `app.basic_auth = True` itself, without
+  them, answers a `Basic` header with a `500`, "Basic authentication is not available". See
+  [HTTP Basic authentication](sessions.md#http-basic-authentication).
 - A bearer token is never written to the log.
 
 ## The session cookie
@@ -228,6 +230,7 @@ exception there, so that a mistake does not wait for a request to show itself.
 |---|---|---|---|
 | `callback_host` of `setup_oauth()`, or `generics.OAUTH_CALLBACK_HOST` | `https://`, a host name, optionally a port, optionally a final `/`, and nothing else | `ValueError` | `generics.py` |
 | `max_pending_logins` of `setup_oauth()` | At least 1 | `ValueError` | `generics.py` |
+| `basic_auth=True` of `construct()` | The LDAP libraries are installed | `RuntimeError` | `base.py` |
 | Arguments of `@asfquart.auth.require` | Each is a method of `asfquart.auth.Requirements` or of a subclass of it | `TypeError` | `auth.py` |
 | A bare `@asfquart.auth.require` | Decorates an `async` function | `TypeError` | `auth.py` |
 | `port` of `runx()` | Given | `ValueError` | `base.py` |
