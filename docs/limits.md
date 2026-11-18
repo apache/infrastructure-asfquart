@@ -2,7 +2,7 @@
 
 asfquart puts limits on how long things last, how large they may be, and how many of them
 there may be. They are described where they belong, in the pages on OAuth, sessions and
-forms. This page brings them together: every limit, its default, what happens when it is
+forms. This page brings them together: each limit, its default, what happens when it is
 reached, how to change it, and where it is in the source. It ends with the things that have
 no limit, which an application or the proxy in front of it may want to limit itself.
 
@@ -30,9 +30,8 @@ long as the time to complete a login.
 
 The OAuth provider has limits of its own, which asfquart does not set. For the ASF provider,
 the `code` that it hands back is valid for 600 seconds and can be used once, according to
-its maintainers. asfquart uses it
-at once, so the 900 seconds above is in practice the time the user has to log in at the
-provider.
+its maintainers. asfquart uses it at once, so the 900 seconds above is in practice the time
+the user has to log in at the provider.
 
 ## Sessions
 
@@ -49,7 +48,7 @@ store applies its own limits, and these are not used.
 | Size of the session cookie | About 4 KB | Browsers do not store a larger cookie, so the session is lost. A Python `UserWarning` is given when one is sent | Keep less in the session, or use a session store |
 | Life of the session cookie in the browser | Until the browser is closed | The cookie is gone, and the user logs in again | Not adjustable |
 
-Two of these are worth a second look:
+Two of these need explaining:
 
 - **The age of the signature** is checked by quart, not by asfquart. The cookie is signed
   again whenever asfquart saves it, which is at least once a minute while the session is in
@@ -109,7 +108,7 @@ The application secret that is generated for the token file is 32 random bytes. 
 ## The values
 
 The limits above that are values in the code, with those values. `tests/limits.py` compares
-this table with the code, so that the page cannot say one thing and the code another.
+this table with the code.
 
 | Name | Value |
 |---|---|
