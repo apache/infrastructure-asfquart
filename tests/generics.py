@@ -1446,3 +1446,22 @@ async def test_get_logout_turned_off_and_same_site_allowed_together(real_session
         client = app.test_client()
         assert (await _logout(client, "GET", "same-site")).status_code == 405
         assert (await _logout(client, "POST", "same-site")).status_code == 204
+
+
+@pytest.mark.generics
+async def test_auth_names_a_session_that_it_cannot_show(monkeypatch, caplog):
+    """A store's session that is neither a dictionary nor has model_dump() is a 500, and the log says why"""
+
+    class OpaqueSession:
+        uid = "testuser"
+
+    async def read():
+        return OpaqueSession()
+
+    monkeypatch.setattr(asfquart.session, "read", read)
+    app = _make_app()
+    async with app.test_app():
+        resp = await app.test_client().get("/auth", scheme="https")
+    assert resp.status_code == 500
+    assert "TypeError: Session type OpaqueSession cannot be shown" in caplog.text
+    assert "model_dump()" in caplog.text

@@ -41,6 +41,7 @@ test = [
     "pytest-mock>=3.10.0,<4",
 ]
 lint = [
+    "pyright>=1.1.414,<2",
     "ruff>=0.17,<1",
 ]
 
@@ -58,6 +59,7 @@ line-length = 120
 [tool.ruff.lint]
 select = [
     "A005",  # stdlib-module-shadowing
+    "ANN",   # flake8-annotations
     "ASYNC", # flake8-async
     "C90",   # cyclomatic-complexity
     "E",     # pycodestyle
@@ -71,15 +73,26 @@ select = [
     "UP",    # pyupgrade
     "W",
 ]
+ignore = [
+    "ANN401", # Any is used where the type is the app's own, e.g. a session from a store
+]
 
 [tool.ruff.lint.per-file-ignores]
 "src/asfquart/__init__.py" = ["F401"]  # imported so that the submodules are loaded
 "tests/**" = [
+    "ANN",  # only src/asfquart is annotated
     "S101", # assert is how pytest tests are written
     "S105", # the tests are full of made-up secrets
 ]
+"examples/**" = ["ANN"]
 "tests/ldap.py" = ["RUF001"]           # look-alike characters are the test data
 "tests/uid_rule.py" = ["RUF001"]
+
+# Tests and examples are not type-checked
+[tool.pyright]
+include = ["src/asfquart"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 minversion = "7.2"

@@ -9,8 +9,15 @@ import warnings
 
 from . import base, session
 
+_P = typing.ParamSpec("_P")
+_R = typing.TypeVar("_R")
 
-def _read(client_session: typing.Any, name: str):
+# A requirement takes the session and returns whether it passes, and the error message if not.
+# The session is Any, as a subclass of Requirements may test for a session class of its own.
+Requirement = typing.Callable[[typing.Any], tuple[bool, str]]
+
+
+def _read(client_session: typing.Any, name: str) -> typing.Any:
     """Reads an attribute of the session that was camelCase until 0.1.13. A session class that
     still has the old name works, with a warning."""
     try:
@@ -44,7 +51,7 @@ class Requirements:
     E_NOT_ROLEACCOUNT = "This endpoint is only accessible to role accounts."
 
     @classmethod
-    def mfa_protected(cls, client_session: session.SessionProtocol):
+    def mfa_protected(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """Tests for whether the user logged in with multi-factor authentication"""
         # The OAuth provider only sends mfa for OIDC logins, so it defaults to False for anything else.
         # Anything but True will cause a failure.
@@ -54,49 +61,49 @@ class Requirements:
     mfa_enabled = mfa_protected
 
     @classmethod
-    def committer(cls, client_session: typing.Any):
+    def committer(cls, client_session: typing.Any) -> tuple[bool, str]:
         """Tests for whether the user is a committer on any project"""
         return client_session is not None, cls.E_NOT_LOGGED_IN
 
     @classmethod
-    def member(cls, client_session: session.SessionProtocol):
+    def member(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """Tests for whether the user is a foundation member"""
         # Anything but True will cause a failure.
         return _read(client_session, "is_member") is True, cls.E_NOT_MEMBER
 
     @classmethod
-    def chair(cls, client_session: session.SessionProtocol):
+    def chair(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a chair of any top-level project"""
         # Anything but True will cause a failure.
         return _read(client_session, "is_chair") is True, cls.E_NOT_CHAIR
 
     @classmethod
-    def root(cls, client_session: session.SessionProtocol):
+    def root(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a member of infra-root"""
         # Anything but True will cause a failure.
         return _read(client_session, "is_root") is True, cls.E_NOT_ROOT
 
     @classmethod
-    def pmc_member(cls, client_session: session.SessionProtocol):
+    def pmc_member(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a PMC member of any top-level project"""
         # Anything but True will cause a failure.
         return bool(client_session.committees), cls.E_NOT_PMC
 
     @classmethod
-    def roleacct(cls, client_session: session.SessionProtocol):
+    def roleacct(cls, client_session: session.SessionProtocol) -> tuple[bool, str]:
         """tests for whether the user is a service account"""
         # Anything but True will cause a failure.
         return _read(client_session, "is_role") is True, cls.E_NOT_ROLEACCOUNT
 
 
 class AuthenticationFailed(base.ASFQuartException):
-    def __init__(self, message: str = "Authentication failed", errorcode: int = 403):
+    def __init__(self, message: str = "Authentication failed", errorcode: int = 403) -> None:
         self.message = message
         self.errorcode = errorcode
         super().__init__(self.message, self.errorcode)
 
 
-def _requirements_to_list(args: typing.Any) -> list:
+def _requirements_to_list(args: typing.Any) -> list[Requirement]:
     """Converts any auth req args (single arg, list, tuple, set) to a list of requirements"""
     # No args? return empty list
     if args is None:
@@ -116,7 +123,7 @@ def _requirements_to_list(args: typing.Any) -> list:
     return args
 
 
-def requirements_to_iter(args: typing.Any):
+def requirements_to_iter(args: typing.Any) -> list[Requirement]:
     """Deprecated: this is an internal helper of require(), and will be removed from the public API."""
     warnings.warn(
         "asfquart.auth.requirements_to_iter is internal to asfquart and will be removed",
@@ -126,7 +133,7 @@ def requirements_to_iter(args: typing.Any):
     return _requirements_to_list(args)
 
 
-def _check(requirement: typing.Callable, client_session: typing.Any):
+def _check(requirement: Requirement, client_session: typing.Any) -> tuple[bool, str]:
     """Runs a requirement against the session, with a clearer error if the session is missing
     the attribute the requirement reads"""
     try:
@@ -141,7 +148,14 @@ def _check(requirement: typing.Callable, client_session: typing.Any):
         ) from None
 
 
-async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of: list, /, *args, **kwargs):
+async def _require_wrapper(
+    original_func: typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]],
+    all_of: list[Requirement],
+    any_of: list[Requirement],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
     """Runs the endpoint original_func, provided there is a session and it meets the requirements"""
     client_session = await session.read()
     errors_list = []
@@ -173,11 +187,30 @@ async def _require_wrapper(original_func: typing.Callable, all_of: list, any_of:
     return await original_func(*args, **kwargs)
 
 
+# Bare @require: the endpoint keeps its signature
+@typing.overload
 def require(
-    func_or_requirements: typing.Callable | typing.Iterable[typing.Callable] | None = None,
-    all_of: typing.Callable | typing.Iterable[typing.Callable] | None = None,
-    any_of: typing.Callable | typing.Iterable[typing.Callable] | None = None,
-):
+    func_or_requirements: typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]],
+) -> typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]]: ...
+
+
+# @require(...): a decorator, which does the same
+@typing.overload
+def require(
+    func_or_requirements: Requirement | typing.Iterable[Requirement] | None = None,
+    all_of: Requirement | typing.Iterable[Requirement] | None = None,
+    any_of: Requirement | typing.Iterable[Requirement] | None = None,
+) -> typing.Callable[
+    [typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]]],
+    typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]],
+]: ...
+
+
+def require(
+    func_or_requirements: typing.Callable[..., typing.Any] | typing.Iterable[Requirement] | None = None,
+    all_of: Requirement | typing.Iterable[Requirement] | None = None,
+    any_of: Requirement | typing.Iterable[Requirement] | None = None,
+) -> typing.Callable[..., typing.Any]:
     """Adds authentication/authorization requirements to an endpoint. Can be a single requirement or a list
     of requirements. By default, all requirements must be satisfied, though this can be made optional by
     explicitly using the `all_of` or `any_of` keywords to specify optionality. Requirements must be part
@@ -221,7 +254,9 @@ def require(
     all_of_list = _requirements_to_list(func_or_requirements) + _requirements_to_list(all_of)
     any_of_list = _requirements_to_list(any_of)
 
-    def require_with_args(original_func: typing.Callable):
+    def require_with_args(
+        original_func: typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]],
+    ) -> typing.Callable[_P, typing.Coroutine[typing.Any, typing.Any, _R]]:
         return functools.wraps(original_func)(
             functools.partial(_require_wrapper, original_func, all_of_list, any_of_list)
         )

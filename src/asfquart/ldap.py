@@ -29,13 +29,13 @@ DEFAULT_LDAP_CACHE_MAX_ENTRIES = 1000  # ... for at most this many users; the le
 # This assumes the quart app was installed with asfpy[aioldap] in the Pipfile.
 try:
     import asfpy.aioldap
-    import bonsai.errors
+    import bonsai.errors  # pyright: ignore[reportMissingImports] - optional, with the aioldap extra
 
     LDAP_SUPPORTED = True
 except ModuleNotFoundError:
     LDAP_SUPPORTED = False
 
-LDAP_CACHE: dict[str, list] = {}  # Temporary one-hour cache to speed up lookups.
+LDAP_CACHE: dict[str, tuple[float, dict[str, list[str]]]] = {}  # Temporary one-hour cache to speed up lookups.
 
 
 def _purge_ldap_cache(max_size: int) -> None:
@@ -53,7 +53,7 @@ def _purge_ldap_cache(max_size: int) -> None:
 
 
 class LDAPClient:
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str) -> None:
         # The username goes into a DN, so it must be a plain user id, and nothing that could alter
         # the DN (a comma, an equals sign and so on). The error is the one given for a wrong
         # password, and no connection to LDAP is made.
@@ -65,9 +65,10 @@ class LDAPClient:
             raise base.ASFQuartException("Invalid credentials provided", errorcode=403)
         self.userid = username
         self.dn = DEFAULT_LDAP_BASE % username
-        self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)
+        # The ignores here and below: both modules are imported when LDAP_SUPPORTED
+        self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)  # pyright: ignore[reportPossiblyUnboundVariable]
 
-    async def get_affiliations(self):  # noqa: C901
+    async def get_affiliations(self) -> dict[str, list[str]]:  # noqa: C901
         """Scans for which projects this user is a part of. Returns a dict with memberships of each
         pmc/committer role (member/owner in LDAP)"""
         all_projects = DEFAULT_LDAP_GROUP_BASE
@@ -88,7 +89,7 @@ class LDAPClient:
                     LDAP_CACHE[self.userid] = LDAP_CACHE.pop(self.userid)
                 return cached[1]
             else:
-                ldap_groups = {attr: [] for attr in attrs}
+                ldap_groups: dict[str, list[str]] = {attr: [] for attr in attrs}
                 async with self.client.connect() as conn:
                     rv = await conn.search(all_projects, attrs)
                     if not rv:
@@ -107,7 +108,7 @@ class LDAPClient:
                     LDAP_CACHE[self.userid] = (time.time(), ldap_groups)
                 return ldap_groups
 
-        except bonsai.errors.AuthenticationError as e:
+        except bonsai.errors.AuthenticationError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
             raise base.ASFQuartException(f"Invalid credentials provided: {e}", errorcode=403)
         except Exception as e:
             print(f"Base exception during LDAP lookup: {e}")

@@ -21,9 +21,11 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true # enable built-in caching of uv
-      - name: Install ruff
-        run: uv sync --locked --only-group lint
+      - name: Install the project and the lint tools
+        run: uv sync --locked --group lint
       - name: Lint with ruff
         run: uv run --no-sync ruff check
       - name: Check formatting with ruff
         run: uv run --no-sync ruff format --check
+      - name: Check types with pyright
+        run: uv run --no-sync pyright

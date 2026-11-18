@@ -146,6 +146,7 @@ two things of it:
   `asfquart.session.SessionProtocol` is the full list.
 - The OAuth endpoint shows the session to a logged-in user who asks for it (`/auth`). For
   that the object must be a dictionary, or have a `model_dump()` method that returns one.
+  Otherwise `/auth` raises a `TypeError` naming the class.
 
 `asfquart.session.ClientSession` meets both, and is what a session is without a store:
 

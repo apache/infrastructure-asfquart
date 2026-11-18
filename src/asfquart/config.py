@@ -4,13 +4,14 @@
 
 import functools
 import inspect
+import typing
 
 import yaml
 
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 
 
-async def _read_config(callback, config_filename):
+async def _read_config(callback: typing.Callable[[dict[str, typing.Any]], object], config_filename: str) -> None:
     """Reads a YAML configuration and passes it to the callback"""
     with open(config_filename, encoding="utf-8") as r:  # noqa: ASYNC230 - a small local file, read once
         config_as_dict = yaml.safe_load(r)
@@ -24,11 +25,13 @@ async def _read_config(callback, config_filename):
         callback(config_as_dict)
 
 
-def static(func):
+def static(
+    func: typing.Callable[[dict[str, typing.Any]], object],
+) -> typing.Callable[..., typing.Coroutine[typing.Any, typing.Any, None]]:
     """Standard wrapper for a configuration parser. Reads config.yaml and passes it to the callback as a dict"""
 
     @functools.wraps(func)
-    async def config_wrapper(config_filename=DEFAULT_CONFIG_FILENAME):
+    async def config_wrapper(config_filename: str = DEFAULT_CONFIG_FILENAME) -> None:
         await _read_config(func, config_filename)
 
     return config_wrapper

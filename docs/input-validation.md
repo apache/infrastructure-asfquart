@@ -141,7 +141,8 @@ cookie, even if the session in it has ended.
 | The `Basic` username | In the form of an ASF user id | `403`, "Invalid credentials provided" |
 | The `Basic` password | Not empty | `403`, "Invalid credentials provided" |
 | The `Basic` credentials | Accepted by LDAP | `403`, "Invalid credentials provided" |
-| A `Bearer` token | Not checked by asfquart: it is passed to the application's `token_handler` | No session if the handler returns nothing, or if there is no handler |
+| A `Bearer` token | Present, and not empty | No session; the application's `token_handler` is not called |
+| A `Bearer` token that is present | Not checked by asfquart: it is passed to the application's `token_handler` | No session if the handler returns nothing, or if there is no handler |
 
 - The username and password are checked before LDAP is contacted. The username goes into an
   LDAP distinguished name, and a bind with a name and an empty password is an anonymous bind
