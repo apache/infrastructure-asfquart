@@ -1,0 +1,89 @@
+name: publish
+run-name: ${{ github.ref_type == 'tag' && format('Publish {0}', github.ref_name) || 'Rehearse publishing' }}
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      digests: ${{ steps.digests.outputs.digests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "latest-known"
+          enable-cache: false
+      - run: python3 -I scripts/check_github_settings.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: python3 -I scripts/check_version.py
+        env:
+          PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PRE_COMMIT_REMOTE_BRANCH: ${{ github.ref }}
+          PRE_COMMIT_TO_REF: ${{ github.sha }}
+      - run: python3 -I scripts/check_uv_pins.py
+      - run: uv python install
+      - run: uv build --offline
+      - run: python3 -I scripts/check_wheel.py dist/*.whl
+      - id: digests
+        run: |
+          {
+            echo "digests<<EOF"
+            sha256sum dist/*
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "latest-known"
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - run: uv sync --locked --no-install-project --no-default-groups --group test
+      - run: uv pip install dist/*.whl
+      - run: uv run --no-sync pytest -o pythonpath=
+
+  publish:
+    needs: [build, test]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - run: test "$(curl -fsS --retry 8 --retry-all-errors "https://releases.apache.org/gates/status/$GITHUB_REPOSITORY_ID/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT")" = APPROVED
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - run: diff <(printf '%s\n' "$DIGESTS") <(sha256sum dist/*)
+        env:
+          DIGESTS: ${{ needs.build.outputs.digests }}
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

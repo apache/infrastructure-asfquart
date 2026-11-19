@@ -1,4 +1,4 @@
-Changes in 0.1.13:
+Changes in 0.2.0:
 
  **WARNING: HTTP Basic authentication is now off by default.** Until now every app accepted an
  `Authorization: Basic` header with an ASF id and password, which is a way round the

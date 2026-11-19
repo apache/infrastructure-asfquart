@@ -1,9 +1,10 @@
 [project]
 name = "asfquart"
-version = "0.1.13"
+version = "0.2.0.dev0+dev"
 requires-python = ">=3.10,<4"
 authors = [{ name = "ASF Infrastructure", email = "users@infra.apache.org" }]
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -49,11 +50,12 @@ lint = [
 Repository = "https://github.com/apache/infrastructure-asfquart"
 
 [build-system]
-requires = ["uv_build>=0.9.11,<0.12.0"]
+requires = ["uv_build>=0.13.5,<0.14"]
 build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120
+per-file-target-version = { "scripts/*" = "py311" }
 
 # The same rule set as tooling-trusted-releases
 [tool.ruff.lint]
@@ -85,6 +87,7 @@ ignore = [
     "S105", # the tests are full of made-up secrets
 ]
 "examples/**" = ["ANN"]
+"scripts/*" = ["S603", "S607"]
 "tests/ldap.py" = ["RUF001"]           # look-alike characters are the test data
 "tests/uid_rule.py" = ["RUF001"]
 
