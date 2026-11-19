@@ -28,6 +28,7 @@ jobs:
       - name: Install uv and set the Python version
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
+          version: "latest-known"
           python-version: ${{ matrix.python-version }}
           enable-cache: true # enable built-in caching of uv
       - uses: awalsh128/cache-apt-pkgs-action@5902b33ae29014e6ca012c5d8025d4346556bd40 # latest

@@ -1,0 +1,20 @@
+name: settings
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -I scripts/check_github_settings.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

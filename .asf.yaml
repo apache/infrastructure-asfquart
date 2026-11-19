@@ -1,2 +1,25 @@
 github:
   del_branch_on_merge: true
+  rulesets:
+    - name: "Main branch"
+      type: branch
+      branches:
+        includes:
+          - "main"
+    - name: "Release tags"
+      target: tag
+      enforcement: active
+      conditions:
+        ref_name:
+          include:
+            - "refs/tags/v*"
+          exclude: []
+      rules:
+        - type: update
+        - type: deletion
+  environments:
+    pypi:
+      deployment_branch_policy:
+        policies:
+          - name: "v*"
+            type: tag
