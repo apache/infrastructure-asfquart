@@ -148,6 +148,50 @@ Building the package:
 uv build
 ```
 
+### Keeping your branch up to date
+
+`main` has no merge commits, which are the commits that `git merge` and a plain `git pull` make
+when they join two lines of work. GitHub refuses any push to `main` that contains one, and the
+checks fail on any pull request that contains one.
+
+So never merge `main` into your branch. To catch up, move your commits on top of the latest
+`main`, then replace your branch on GitHub:
+
+```shell
+git pull --rebase origin main
+git push --force-with-lease
+```
+
+The button on a pull request page that updates the branch merges by default, so if you use it,
+choose its rebase option instead. If you push to `main` directly, run
+`git config pull.rebase true` once, so that `git pull` never makes a merge commit.
+
+The same two commands fix a pull request whose checks fail with "merge commits are not allowed,
+so rebase instead". They also fix one that was started during a release and fails the version
+check, once the release has finished.
+
+## Releasing
+
+Releases are numbered `0.2.N`. Between releases, the version on `main` is that of the next
+release with `.dev0+dev` appended, such as `0.2.0.dev0+dev` before 0.2.0. The `+dev` makes it a
+local version, which PyPI will not accept, so a build from source can never be published as a
+release.
+
+Before a release, check that `CHANGELOG.md` has a section for it, such as "Changes in 0.2.0:".
+Then run `sh scripts/phase.sh release` on an up to date `main`. It changes the version from
+`0.2.N.dev0+dev` to `0.2.N`, commits, tags that commit `v0.2.N`, and pushes the commit and the
+tag together. The upload to PyPI waits until two members of the `tooling` or `infrastructure`
+LDAP service groups approve it at https://releases.apache.org/gates. Only members of those
+groups can start a release. If anyone else pushes the tag, ATR rejects the run, and a member can
+re-run it.
+
+Straight afterwards, before anything else is merged, run `sh scripts/phase.sh develop` to change
+the version to `0.2.(N+1).dev0+dev`, commit, and push.
+
+To start a new series, such as 0.3, change `series` in `scripts/phase.sh` and `_SERIES` in
+`scripts/check_version.py`, and run `uv version --no-config --no-sync 0.3.0.dev0+dev`, all in
+one commit.
+
 ## Examples
 
 There is a simple test application included (`./examples/snippets/simple_app.py`) to outline the basic setup.
