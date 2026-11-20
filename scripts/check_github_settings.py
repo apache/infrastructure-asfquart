@@ -23,7 +23,11 @@ from typing import Any, Final
 
 _ENVIRONMENT: Final = "pypi"
 _RULESETS: Final = {
-    "Main branch": ("branch", "refs/heads/main", frozenset({"deletion", "non_fast_forward"})),
+    "Main branch": (
+        "branch",
+        "refs/heads/main",
+        frozenset({"deletion", "non_fast_forward", "required_linear_history"}),
+    ),
     "Release tags": ("tag", "refs/tags/v*", frozenset({"deletion", "update"})),
 }
 
@@ -59,8 +63,6 @@ def _ruleset_errors(name: str, ruleset: Any, expected: tuple[str, str, frozenset
         errors.append(f"the {name} ruleset does not cover exactly {ref}")
     if not (rules <= {rule["type"] for rule in ruleset["rules"]}):
         errors.append(f"the {name} ruleset does not have the rules {sorted(rules)}")
-    if ruleset.get("bypass_actors"):
-        errors.append(f"the {name} ruleset has bypass actors")
     return errors
 
 

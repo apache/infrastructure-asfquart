@@ -44,6 +44,8 @@ def _check(label: str, parent: str | None, revision: str) -> list[str]:
 
 
 def _check_commit(commit: str) -> list[str]:
+    if _exists(f"{commit}^2"):
+        return [f"{commit[:12]}: merge commits are not allowed, so rebase instead"]
     parent = f"{commit}^" if _exists(f"{commit}^") else None
     return _check(commit[:12], parent, commit)
 
@@ -106,11 +108,14 @@ def _version(revision: str) -> str:
 
 def main() -> None:
     remote_ref = os.environ.get("PRE_COMMIT_REMOTE_BRANCH", "")
+    start = os.environ.get("PRE_COMMIT_FROM_REF", _ZERO)
     end = os.environ.get("PRE_COMMIT_TO_REF", "")
     if remote_ref.startswith("refs/tags/v") and end:
         errors = [*_check_commit(end), *_check_tag(remote_ref.removeprefix("refs/tags/"), end)]
+    elif remote_ref.startswith("refs/pull/") and end:
+        errors = [*_check_range(start, f"{end}^2"), *_check("pull request merge", f"{end}^1", end)]
     elif end:
-        errors = _check_range(os.environ.get("PRE_COMMIT_FROM_REF", _ZERO), end)
+        errors = _check_range(start, end)
     else:
         errors = _check("staged changes", "HEAD" if _exists("HEAD") else None, "")
     if errors:

@@ -148,6 +148,28 @@ Building the package:
 uv build
 ```
 
+### Keeping your branch up to date
+
+`main` has no merge commits, which are the commits that `git merge` and a plain `git pull` make
+when they join two lines of work. GitHub refuses any push to `main` that contains one, and the
+checks fail on any pull request that contains one.
+
+So never merge `main` into your branch. To catch up, move your commits on top of the latest
+`main`, then replace your branch on GitHub:
+
+```shell
+git pull --rebase origin main
+git push --force-with-lease
+```
+
+The button on a pull request page that updates the branch merges by default, so if you use it,
+choose its rebase option instead. If you push to `main` directly, run
+`git config pull.rebase true` once, so that `git pull` never makes a merge commit.
+
+The same two commands fix a pull request whose checks fail with "merge commits are not allowed,
+so rebase instead". They also fix one that was started during a release and fails the version
+check, once the release has finished.
+
 ## Releasing
 
 Releases are numbered `0.2.N`. Between releases, the version on `main` is that of the next
