@@ -92,9 +92,32 @@ provider's certificate must be valid and match its host name.
 
 The session is only created if the provider answers `200` with a JSON object whose `uid` is a
 string in the form of an ASF user id (`asfquart.generics.OAUTH_UID_RE`: lower case letters,
-digits, `-` and `_`, starting with a letter, at least two characters). In every other case
+digits, `-` and `_`, starting with a letter, at least two characters), and whose `origin_uri`,
+if it has one, is the callback address of this login (see below). In every other case
 (the provider cannot be reached, is too slow, refuses the code, or sends something else) nothing
 is stored and the response is `403 OAuth authentication failed.`
+
+#### The response must be for this login
+
+The provider gives a user's details to whoever presents a valid `code`. It does not ask who
+is presenting it, and a code is not tied to the application that it was issued for. Without
+a check, a code that the provider issued for a login at *another* application would do here
+as well: somebody who came by such a code, the people who run that other application for
+instance, could start a login here, present the code in place of their own, and be logged in
+as its user.
+
+So asfquart checks which login the response belongs to. The provider's response has an
+`origin_uri`: the address that it was asked to send the browser back to when the login
+started. For a login that this application started, that is this application's callback
+address with the `state` of this very login in it, and asfquart remembers the address it
+sent. The response is accepted only if its `origin_uri` has the same scheme, host and path,
+and the same `state`. A code from a login at another application has that application's
+address, and a code from another login here has another `state`, so both are refused.
+
+A response with no `origin_uri` at all is accepted, since not every provider sends one, and
+a warning is logged once to say that this check could not be made:
+`The OAuth provider's response has no origin_uri, ...`. If you see it with the ASF provider,
+the check is not protecting you, and that is worth reporting.
 
 The response to the user is the same in each of those cases. What went wrong is logged as a
 warning by the `asfquart.generics` logger (`OAuth code exchange failed: ...`): the kind of
@@ -470,8 +493,8 @@ Pending logins that are never completed do not accumulate:
   have to start again. In normal use the limit is never reached; it is there for a client
   that starts logins without end.
 - The memory that 10,000 pending logins take depends on their redirect targets, which is why
-  those have a maximum length: roughly 3 MB when the targets are short, as they usually are,
-  and roughly 24 MB if every one is as long as it may be.
+  those have a maximum length: roughly 5 MB when the targets are short, as they usually are,
+  and roughly 25 MB if every one is as long as it may be.
 - A warning is logged when logins are dropped for want of room, at most once a minute:
   `More than 10000 OAuth logins are pending; 37 dropped since the last warning, oldest first.`
   The number is how many were dropped since the warning before. One warning with a small

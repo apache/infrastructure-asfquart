@@ -1465,3 +1465,162 @@ async def test_auth_names_a_session_that_it_cannot_show(monkeypatch, caplog):
     assert resp.status_code == 500
     assert "TypeError: Session type OpaqueSession cannot be shown" in caplog.text
     assert "model_dump()" in caplog.text
+
+
+# ---- The provider's response must be for the login that this app started ----
+
+
+async def _login_with_origin(app, monkeypatch, make_origin, **start):
+    """Starts a login, and makes the callback as the same browser, with a provider whose response
+    has the origin_uri that make_origin() makes of the callback address the provider was sent.
+    Returns the client, the callback response and that callback address."""
+    provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA))
+    monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", provider)
+    client = app.test_client()
+    resp = await client.get("/auth?login", scheme="https", **start)
+    assert resp.status_code == 302
+    sent = urllib.parse.parse_qs(urllib.parse.urlsplit(resp.headers["Location"]).query)
+    (state,), (callback,) = sent["state"], sent["redirect_uri"]
+    origin = make_origin(callback)
+    if origin is not None:
+        provider.data["origin_uri"] = origin
+    query = urllib.parse.urlencode({"state": state, "code": "abc123"})
+    return client, await client.get(f"/auth?{query}", scheme="https"), callback
+
+
+@pytest.fixture
+def origin_warning(monkeypatch):
+    """The warning for a response with no origin_uri is logged once per process: start afresh"""
+    monkeypatch.setattr(asfquart.generics, "_warned_no_origin_uri", False)
+
+
+async def _logged_in(client):
+    return (await client.get("/auth", scheme="https")).status_code == 200
+
+
+@pytest.mark.generics
+async def test_response_for_this_login_is_accepted(monkeypatch, origin_warning, caplog):
+    app = _make_app()
+    async with app.test_app():
+        client, resp, callback = await _login_with_origin(app, monkeypatch, lambda callback: callback)
+        assert callback.startswith("https://localhost/auth?state=")
+        assert resp.status_code == 200
+        assert await _logged_in(client)
+    assert "origin_uri" not in caplog.text
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize(
+    "rewrite",
+    [
+        lambda callback: callback.replace("https://localhost", "HTTPS://LOCALHOST"),
+        lambda callback: callback.replace("?state=", "?extra=1&state="),
+        lambda callback: callback + "&code=xyz",
+        lambda callback: callback + "#fragment",
+    ],
+)
+async def test_same_address_written_another_way_is_accepted(monkeypatch, origin_warning, rewrite):
+    """The address is compared in its parts, so a provider that writes it differently is not turned away"""
+    app = _make_app()
+    async with app.test_app():
+        client, resp, _ = await _login_with_origin(app, monkeypatch, rewrite)
+        assert resp.status_code == 200
+        assert await _logged_in(client)
+
+
+OTHER_LOGINS = {
+    "another app": lambda callback: callback.replace("https://localhost", "https://other.apache.org"),
+    "another app, on a port": lambda callback: callback.replace("https://localhost", "https://localhost:8443"),
+    "this host as a prefix": lambda callback: callback.replace("https://localhost", "https://localhost.evil.example"),
+    "another path": lambda callback: callback.replace("/auth?", "/other/auth?"),
+    "plain http": lambda callback: callback.replace("https://", "http://"),
+    "another login here": lambda callback: callback[:-4] + ("0000" if not callback.endswith("0000") else "1111"),
+    "no state": lambda callback: callback.split("?")[0],
+    "two states": lambda callback: callback + "&state=another",
+    "empty": lambda callback: "",
+    "not an address": lambda callback: "testuser",
+    "a list": lambda callback: [callback],
+    "a number": lambda callback: 42,
+    "null": lambda callback: False,
+}
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("which", list(OTHER_LOGINS))
+async def test_response_for_another_login_is_refused(monkeypatch, origin_warning, caplog, which):
+    """A code that was issued for a login somewhere else does not log anybody in here"""
+    app = _make_app()
+    async with app.test_app():
+        client, resp, callback = await _login_with_origin(app, monkeypatch, OTHER_LOGINS[which])
+        assert resp.status_code == 403
+        assert (await resp.get_data()).decode() == "OAuth authentication failed.\n"
+        assert not await _logged_in(client)
+    failures = [r.getMessage() for r in caplog.records if r.name == "asfquart.generics"]
+    assert len(failures) == 1
+    assert failures[0].startswith("OAuth code exchange failed: ")
+    assert "origin_uri" in failures[0]
+    # The log has neither the code nor the state, nor what the provider sent
+    state = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)["state"][0]
+    assert "abc123" not in caplog.text and state not in caplog.text and "other.apache.org" not in caplog.text
+
+
+@pytest.mark.generics
+async def test_refused_response_uses_up_the_state(monkeypatch, origin_warning):
+    """As with every other failure of the callback: it cannot be tried again with a better response"""
+    app = _make_app()
+    async with app.test_app():
+        client, resp, callback = await _login_with_origin(
+            app, monkeypatch, lambda callback: callback.replace("localhost", "other.apache.org")
+        )
+        assert resp.status_code == 403
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)["state"][0]
+        provider = _FakeProvider(data=dict(GOOD_OAUTH_DATA, origin_uri=callback))
+        monkeypatch.setattr(asfquart.generics.aiohttp.client, "ClientSession", provider)
+        again = await client.get(f"/auth?state={state}&code=abc123", scheme="https")
+        assert again.status_code == 403
+        assert provider.calls == []
+
+
+@pytest.mark.generics
+async def test_response_without_origin_uri_is_accepted_and_warned_about_once(monkeypatch, origin_warning, caplog):
+    app = _make_app()
+    async with app.test_app():
+        for _ in range(3):
+            client, resp, _ = await _login_with_origin(app, monkeypatch, lambda callback: None)
+            assert resp.status_code == 200
+            assert await _logged_in(client)
+    warnings = [r for r in caplog.records if r.name == "asfquart.generics" and "no origin_uri" in r.getMessage()]
+    assert len(warnings) == 1
+    assert warnings[0].levelname == "WARNING"
+
+
+@pytest.mark.generics
+async def test_origin_uri_is_checked_against_the_pinned_callback_host(monkeypatch, origin_warning):
+    """With callback_host set, the address that was sent is the pinned one, whatever the request's Host"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, callback_host="https://myapp.apache.org")
+    async with app.test_app():
+        _, resp, callback = await _login_with_origin(app, monkeypatch, lambda callback: callback)
+        assert callback.startswith("https://myapp.apache.org/auth?state=")
+        assert resp.status_code == 200
+        _, resp, _ = await _login_with_origin(
+            app, monkeypatch, lambda callback: callback.replace("myapp.apache.org", "localhost")
+        )
+        assert resp.status_code == 403
+
+
+@pytest.mark.generics
+async def test_code_from_a_login_at_another_app_cannot_be_used_here(monkeypatch, origin_warning):
+    """The case this is for. A user logs in at another app, which is given a code for them. Somebody
+    with that code starts a login here and presents it. The provider answers with the user's
+    details, as it would for anybody, and with the address of the app the login was for."""
+    app = _make_app()
+    victim_at_other_app = dict(
+        GOOD_OAUTH_DATA, uid="victim", origin_uri="https://other.apache.org/auth?state=0123456789abcdef0123456789abcdef"
+    )
+    provider = _FakeProvider(data=victim_at_other_app)
+    async with app.test_app():
+        attacker, resp = await _login_and_call_back(app, monkeypatch, provider, code="the-code-for-the-victim")
+        assert provider.calls != []  # the provider was asked, and answered
+        assert resp.status_code == 403
+        assert not await _logged_in(attacker)

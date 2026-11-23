@@ -116,10 +116,16 @@ provider, and creates a session from the answer only if the answer identifies a 
 | The status | `200`. A redirect is not followed |
 | The body | JSON, and a JSON object |
 | `uid` | Present, a string, and in the form of an ASF user id |
+| `origin_uri`, if present | A string, and the callback address of this login: the same scheme, host and path, and the same `state` |
 
 If any of these is not met the login fails with a `403`, "OAuth authentication failed.", no
 session is created, and a warning in the log says which rule it was. The warning does not
 contain the `code`, the `state` or the response.
+
+`origin_uri` is the address the provider was asked to send the browser back to, so this
+refuses a response that belongs to a login at another application, or to another login at
+this one. A response without it is accepted, and that is logged once. See
+[Setting up OAuth](oauth.md#the-response-must-be-for-this-login).
 
 The other fields of the response (`fullname`, `email`, `isMember`, `pmcs` and so on) are not
 checked. They are stored in the session as they were received.
