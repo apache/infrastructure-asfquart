@@ -50,9 +50,10 @@ On `/auth?login` or `/auth?login=/foo`, asfquart:
    - the time the login started,
    - the redirect target (if any),
    - the SHA-256 digest of a random browser identifier.
-4. Stores the browser identifier in the `asfquart-oauth-state` cookie. If the browser already
-   has this cookie, the existing value is reused. The cookie is `HttpOnly`, `Secure`,
-   `SameSite=Lax`, scoped to the OAuth endpoint path, and expires after the workflow timeout.
+4. Stores the browser identifier in the `__Host-asfquart-oauth-state` cookie. If the browser
+   already has this cookie, the existing value is reused. The cookie is `HttpOnly`, `Secure`,
+   `SameSite=Lax`, and expires after the workflow timeout. Its `__Host-` prefix means that
+   only this host can have set it; see [Cookie names](sessions.md#cookie-names).
 5. Redirects the browser to the OAuth provider with the `state` and the HTTPS callback URL.
 
 ### When the callback arrives
@@ -64,7 +65,7 @@ following hold:
    removed from `pending_states` as it is looked up, so each state can be used at most
    once. Unknown, forged, or replayed states are rejected.
 2. **The callback comes from the browser that started the login.** The SHA-256 digest of the
-   `asfquart-oauth-state` cookie sent with the callback must match the digest stored with the
+   `__Host-asfquart-oauth-state` cookie sent with the callback must match the digest stored with the
    state. The comparison uses `hmac.compare_digest`. This prevents a login started in one
    browser from being completed in another (login CSRF).
 3. **The login was completed in time.** The callback must arrive within `workflow_timeout`

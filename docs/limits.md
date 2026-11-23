@@ -26,7 +26,7 @@ These are in `asfquart/generics.py`, and are explained in [Setting up OAuth](oau
 | Attempts at the exchange | One: it is not tried again, and a redirect is not followed | The login fails with a `403` | Not adjustable |
 | TLS version for the exchange | 1.2 or later | The login fails with a `403` | Not adjustable |
 
-The cookie that ties a login to the browser that started it (`asfquart-oauth-state`) lasts as
+The cookie that ties a login to the browser that started it (`__Host-asfquart-oauth-state`) lasts as
 long as the time to complete a login.
 
 The OAuth provider has limits of its own, which asfquart does not set. For the ASF provider,

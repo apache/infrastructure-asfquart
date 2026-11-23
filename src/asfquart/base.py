@@ -505,6 +505,10 @@ def construct(
     import asfquart.utils
 
     # Sane defaults for cookies: SameSite=Strict; Secure; HttpOnly
+    # The __Host- prefix makes a browser refuse the cookie unless it is Secure, has Path=/, and
+    # has no Domain, so that no other host of the same site can give the browser a session cookie
+    # for this app. See "Cookie names" in docs/sessions.md.
+    app.config["SESSION_COOKIE_NAME"] = "__Host-session"
     app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True

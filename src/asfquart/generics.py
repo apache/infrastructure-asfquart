@@ -53,7 +53,14 @@ OAUTH_LOGOUT_SAME_SITE = False
 # OAuth provider, and a Strict cookie is not sent when the provider is on a
 # different site. Deployments where the provider and the app share a site may
 # set STATE_COOKIE_SAMESITE = "Strict".
-STATE_COOKIE_NAME = "asfquart-oauth-state"
+#
+# The __Host- prefix makes a browser refuse the cookie unless it is Secure, has Path=/, and has no
+# Domain. Without it, a page on another host of the same site could give the browser a cookie of
+# this name with a Domain, and so its own identifier, and complete a login in somebody else's
+# browser. A browser also refuses a __Host- cookie that is not Secure, so to develop over plain
+# HTTP set the name back to "asfquart-oauth-state" along with STATE_COOKIE_SECURE = False. See
+# "Cookie names" in docs/sessions.md.
+STATE_COOKIE_NAME = "__Host-asfquart-oauth-state"
 STATE_COOKIE_SAMESITE = "Lax"
 STATE_COOKIE_SECURE = True
 
@@ -447,7 +454,7 @@ def setup_oauth(  # noqa: C901
                 secure=STATE_COOKIE_SECURE,
                 httponly=True,
                 samesite=STATE_COOKIE_SAMESITE,
-                path=uri,
+                path="/",  # and no domain: both are what the __Host- prefix requires
             )
             return response
 
