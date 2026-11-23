@@ -131,6 +131,15 @@ Changes in 0.1.13:
    either limit the request is a 500, as it is when LDAP cannot be reached. An LDAP check is not
    retried. See "LDAP" in `docs/external-services.md`.
 
+ - An LDAP server that does not answer the connection itself stops the whole application, and
+   not only the request that asked, for as long as the connection is attempted: the LDAP library
+   holds the Python interpreter meanwhile. Until now that had no end. It now ends after 5 seconds
+   (`ldap.LDAP_NETWORK_TIMEOUT`) for each LDAP check, with a 500. asfquart does this by setting
+   `LDAPNETWORK_TIMEOUT` in the environment of the process at the first LDAP check, unless it is
+   already set; programs that the application starts afterwards inherit it.
+   Connections to LDAP are now made one at a time, which the timeout needs with asfpy 0.60 and
+   earlier; the lookups that follow a connection still go on side by side.
+
  Requests and responses
  - `utils.formdata()` refuses a form larger than the new `MAX_FORM_CONTENT_LENGTH` config option
    (default 100 KB) with a 413, before the form is parsed. The limit is separate from quart's

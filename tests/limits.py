@@ -268,8 +268,9 @@ def test_ldap_limits_are_the_ones_on_the_page():
     """The numbers in the table of limits for LDAP; tests/ldap.py tests what they do"""
     assert asfquart.ldap.LDAP_TIMEOUT == 30
     assert asfquart.ldap.MAX_LDAP_OPERATIONS == 10
+    assert asfquart.ldap.LDAP_NETWORK_TIMEOUT == 5
     limits = TEXT[TEXT.index("## LDAP") : TEXT.index("## The application")]
-    assert "| 30 seconds |" in limits and "| 10 |" in limits
+    assert "| 30 seconds |" in limits and "| 10 |" in limits and "| 5 seconds, for each LDAP check |" in limits
 
 
 def test_page_is_linked_from_the_index():

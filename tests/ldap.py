@@ -3,6 +3,7 @@
 
 import asyncio
 import base64
+import os
 import types
 
 import pytest
@@ -48,6 +49,38 @@ def ldap_clients(monkeypatch):
     fake_asfpy = types.SimpleNamespace(aioldap=types.SimpleNamespace(LDAPClient=fake_ldap_client))
     monkeypatch.setattr(asfquart.ldap, "asfpy", fake_asfpy, raising=False)
     return created
+
+
+@pytest.fixture
+def no_network_timeout(monkeypatch):
+    """LDAPNETWORK_TIMEOUT is not in the environment, and what a test puts there is taken out"""
+    monkeypatch.setenv("LDAPNETWORK_TIMEOUT", "0")  # so that monkeypatch knows to restore it
+    monkeypatch.delenv("LDAPNETWORK_TIMEOUT")
+
+
+def test_network_timeout_is_given_to_the_ldap_library(no_network_timeout, ldap_clients):
+    """The LDAP library reads LDAPNETWORK_TIMEOUT from the environment, and without it a server
+    that does not answer the connection stops the whole application without end"""
+    asfquart.ldap.LDAPClient("testuser", "password")
+    assert os.environ["LDAPNETWORK_TIMEOUT"] == "5"
+
+
+def test_network_timeout_follows_the_constant_before_the_first_client(monkeypatch, no_network_timeout, ldap_clients):
+    monkeypatch.setattr(asfquart.ldap, "LDAP_NETWORK_TIMEOUT", 2)
+    asfquart.ldap.LDAPClient("testuser", "password")
+    assert os.environ["LDAPNETWORK_TIMEOUT"] == "2"
+
+
+def test_network_timeout_of_the_operator_is_left_alone(monkeypatch, ldap_clients):
+    monkeypatch.setenv("LDAPNETWORK_TIMEOUT", "12")
+    asfquart.ldap.LDAPClient("testuser", "password")
+    assert os.environ["LDAPNETWORK_TIMEOUT"] == "12"
+
+
+def test_network_timeout_is_not_set_for_credentials_that_never_reach_ldap(no_network_timeout, ldap_clients):
+    with pytest.raises(asfquart.base.ASFQuartException):
+        asfquart.ldap.LDAPClient("testuser", "")
+    assert "LDAPNETWORK_TIMEOUT" not in os.environ
 
 
 @pytest.mark.auth
@@ -289,10 +322,10 @@ async def test_cached_user_is_not_failed_by_an_eviction_during_the_password_chec
         connection = client.connect
 
         class HeldOpen(connection):
-            async def __aenter__(self):
+            async def __aexit__(self, *exc):
                 waiting.set()
-                await hold.wait()  # the bind does not come back yet
-                return await super().__aenter__()
+                await hold.wait()  # the password was right, and the connection is not closed yet
+                return await super().__aexit__(*exc)
 
         return types.SimpleNamespace(connect=HeldOpen)
 
@@ -851,10 +884,10 @@ async def test_ldap_checks_at_one_time_are_limited(slow, monkeypatch, caplog):
     monkeypatch.setattr(asfquart.ldap, "MAX_LDAP_OPERATIONS", 3)
     for user in ("aa", "bb", "cc"):
         await _unavailable(user)  # each waits out the time limit, and is left going on
-    assert len(slow.binds) == 3
+    assert len(slow.binds) == 1  # one is connecting, and the others wait for it
     for user in ("dd", "ee", "ff", "aa"):
         await asyncio.wait_for(_unavailable(user), timeout=0.01)  # refused at once
-    assert len(slow.binds) == 3  # LDAP was not asked again
+    assert len(slow.binds) == 1  # LDAP was not asked again
     assert asfquart.ldap._ldap_operations == 3
     busy = [line for line in _errors(caplog) if "which is the most allowed" in line]
     assert busy == [
@@ -868,6 +901,8 @@ async def test_ldap_checks_at_one_time_are_limited(slow, monkeypatch, caplog):
     slow.go_on.set()
     await _settle()
     assert asfquart.ldap._ldap_operations == 0
+    # Those that waited for their turn made no connection: their requests had gone
+    assert len(slow.binds) == 1
     assert await _lookup("dd") == {"member": ["testproject"], "owner": []}
     assert asfquart.ldap._ldap_operations == 0
 
@@ -931,3 +966,150 @@ async def test_ldap_is_not_tried_again(refusing):
     refusing.error = ConnectionError("Can't contact LDAP server")
     await _refused("alice")
     assert len(refusing.binds) == 1
+
+
+# ---- One connection to LDAP at a time ----
+
+
+class _GatedDirectory:
+    """Stands in for asfpy.aioldap, and keeps count of what goes on at the same time. As in asfpy,
+    connect() itself begins the connection. Connecting and searching each wait for the test."""
+
+    def __init__(self):
+        self.started = []
+        self.connecting = 0
+        self.most_connecting = 0
+        self.searching = 0
+        self.most_searching = 0
+        self.closed_with = []
+        self.connect_gate = asyncio.Event()
+        self.search_gate = asyncio.Event()
+        self.search_error = None
+
+    def LDAPClient(self, uri, dn, password):  # noqa: N802 - stands in for bonsai.LDAPClient
+        directory = self
+
+        class Connection:
+            def __init__(self):
+                directory.started.append(dn)
+                directory.connecting += 1
+                directory.most_connecting = max(directory.most_connecting, directory.connecting)
+
+            async def __aenter__(self):
+                try:
+                    await directory.connect_gate.wait()
+                finally:
+                    directory.connecting -= 1
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                directory.closed_with.append(exc_type)
+                return False
+
+            async def search(self, base, attrs):
+                directory.searching += 1
+                directory.most_searching = max(directory.most_searching, directory.searching)
+                try:
+                    await directory.search_gate.wait()
+                finally:
+                    directory.searching -= 1
+                if directory.search_error is not None:
+                    raise directory.search_error
+                return [{"dn": "cn=testproject,ou=project,ou=groups,dc=apache,dc=org", "member": [dn], "owner": []}]
+
+        return types.SimpleNamespace(connect=Connection)
+
+
+@pytest.fixture
+def gated(monkeypatch, directory):
+    fake = _GatedDirectory()
+    monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=fake), raising=False)
+    monkeypatch.setattr(asfquart.ldap, "_ldap_operations", 0)
+    return fake
+
+
+@pytest.mark.auth
+async def test_connections_to_ldap_are_made_one_at_a_time(gated):
+    """With asfpy 0.60, connections made at the same time lose the network timeout, and a server
+    that does not answer then stops the application without end"""
+    gated.search_gate.set()
+    lookups = [asyncio.ensure_future(_lookup(user)) for user in ("aa", "bb", "cc")]
+    await _settle()
+    assert gated.started == ["uid=aa,ou=people,dc=apache,dc=org"]  # the others have not begun
+    gated.connect_gate.set()
+    for lookup in lookups:
+        assert await lookup == {"member": ["testproject"], "owner": []}
+    assert len(gated.started) == 3
+    assert gated.most_connecting == 1
+
+
+@pytest.mark.auth
+async def test_what_follows_the_connection_is_not_held_back(gated):
+    """Only connecting is one at a time: the lookups on the connections go on side by side"""
+    gated.connect_gate.set()
+    lookups = [asyncio.ensure_future(_lookup(user)) for user in ("aa", "bb", "cc")]
+    await _settle()
+    assert gated.searching == 3
+    gated.search_gate.set()
+    for lookup in lookups:
+        assert await lookup == {"member": ["testproject"], "owner": []}
+    assert gated.most_connecting == 1
+
+
+@pytest.mark.auth
+async def test_connection_that_fails_lets_the_next_one_be_made(refusing):
+    await _refused("alice")
+    await asyncio.wait_for(_refused("bob"), timeout=1)
+    assert len(refusing.binds) == 2
+
+
+@pytest.mark.auth
+async def test_connection_is_closed_with_the_error_of_the_lookup(gated):
+    """The connection is left as "async with" leaves it: closed, and told of the error"""
+    gated.connect_gate.set()
+    gated.search_gate.set()
+    await _lookup("alice")
+    assert gated.closed_with == [None]
+    gated.search_error = OSError("connection lost")
+    with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+        await _lookup("bob")
+    assert excinfo.value.errorcode == 500
+    assert gated.closed_with == [None, OSError]
+
+
+@pytest.mark.auth
+async def test_request_that_gave_up_while_waiting_its_turn_makes_no_connection(slow, caplog):
+    """A connection that nobody waits for could stop the application to no purpose"""
+    for user in ("aa", "bb"):
+        await _unavailable(user)
+    assert len(slow.binds) == 1
+    assert asfquart.ldap._ldap_operations == 2  # bb still counts while it waits for its turn
+    slow.go_on.set()
+    await _settle()
+    assert len(slow.binds) == 1
+    assert asfquart.ldap._ldap_operations == 0
+    # It was logged when the request gave up, and is not logged again as a failure of LDAP
+    assert _errors(caplog) == [
+        "LDAP did not answer within 0.05 seconds for user aa",
+        "LDAP did not answer within 0.05 seconds for user bb",
+    ]
+
+
+def test_connections_are_one_at_a_time_in_every_event_loop(gated):
+    """A lock belongs to the event loop it was first waited for in, so there is one for each"""
+
+    async def two_at_once():
+        gated.connect_gate, gated.search_gate = asyncio.Event(), asyncio.Event()  # of this loop
+        gated.search_gate.set()
+        lookups = [asyncio.ensure_future(_lookup(user)) for user in ("aa", "bb")]
+        await _settle()
+        gated.connect_gate.set()
+        return [await lookup for lookup in lookups]
+
+    for _ in range(2):
+        loop = asyncio.new_event_loop()
+        try:
+            assert len(loop.run_until_complete(two_at_once())) == 2
+        finally:
+            loop.close()
+    assert gated.most_connecting == 1

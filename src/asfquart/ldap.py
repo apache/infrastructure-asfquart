@@ -2,9 +2,14 @@
 """ASFQuart - LDAP Authentication methods and decorators"""
 
 import asyncio
+import contextlib
 import logging
+import os
 import re
 import time
+import weakref
+from collections.abc import AsyncIterator
+from typing import Any
 
 from . import base
 
@@ -59,8 +64,35 @@ _FAILED_LOGINS: dict[str, tuple[float, int]] = {}
 
 # How long a request waits for LDAP to check a password and look up the memberships, in seconds.
 # After that the request is answered with an error. The work in LDAP cannot be stopped from here:
-# it goes on in a thread of asfpy.aioldap until LDAP answers or the connection fails.
+# it goes on in a thread of asfpy.aioldap until LDAP answers, the connection fails, or asfpy
+# gives up.
+#
+# This does not cover a server that leaves the connection itself unanswered. bonsai holds the
+# interpreter while it connects, so every thread stops, the event loop with them, and this time
+# is not counted until the attempt ends. LDAP_NETWORK_TIMEOUT is what ends that.
 LDAP_TIMEOUT = 30
+# How long the LDAP library waits for a server that does not answer the connection, in seconds.
+# For that long the whole application is stopped, as said above, so this is short. It is given
+# to the library as LDAPNETWORK_TIMEOUT in the environment, which is the one way to set it that
+# works for the connection, and the library reads it once, at its first use: a value that is
+# already in the environment is left alone, and a change made here after the first LDAPClient
+# has connected has no effect. See docs/external-services.md.
+LDAP_NETWORK_TIMEOUT = 5
+# One connection to LDAP is made at a time; the checks that follow on it are not held back. With
+# asfpy 0.60 and earlier, connections that are made at the same time undo that timeout for each
+# other (asfpy switches a setting of bonsai, for the whole process, around every connection), and
+# the application then stops without end. A lock for each event loop, as a lock belongs to one.
+_CONNECT_LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
+class _GivenUpError(Exception):
+    """The request stopped waiting for LDAP before a connection for it was made"""
+
+
+def _connect_lock() -> asyncio.Lock:
+    return _CONNECT_LOCKS.setdefault(asyncio.get_running_loop(), asyncio.Lock())
+
+
 # How many such pieces of work there may be at one time, counting those that a request has stopped
 # waiting for. Each one holds a thread and a connection, so without a limit an LDAP server that
 # does not answer would collect them for as long as requests kept coming. Over the limit, a
@@ -170,8 +202,31 @@ class LDAPClient:
             raise base.ASFQuartException("Invalid credentials provided", errorcode=403)
         self.userid = username
         self.dn = DEFAULT_LDAP_BASE % username
+        # Before the first connection, which is when the LDAP library reads it
+        os.environ.setdefault("LDAPNETWORK_TIMEOUT", str(LDAP_NETWORK_TIMEOUT))
+        self._given_up = False  # set when the request has stopped waiting for LDAP
         # The ignores here and below: both modules are imported when LDAP_SUPPORTED
         self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)  # pyright: ignore[reportPossiblyUnboundVariable]
+
+    @contextlib.asynccontextmanager
+    async def _connected(self) -> AsyncIterator[Any]:
+        """A connection to LDAP on which the password has been accepted, as
+        "async with self.client.connect()" gives, made while no other is being made"""
+        async with _connect_lock():
+            # The request may have stopped waiting while this waited for its turn. A connection
+            # that nobody is waiting for is not made: it could stop the application to no purpose.
+            if self._given_up:
+                raise _GivenUpError
+            # asfpy starts to connect in connect() itself, so that is inside the lock as well
+            manager = self.client.connect()
+            conn = await manager.__aenter__()
+        try:
+            yield conn
+        except BaseException as e:
+            if not await manager.__aexit__(type(e), e, e.__traceback__):
+                raise
+        else:
+            await manager.__aexit__(None, None, None)
 
     async def get_affiliations(self) -> dict[str, list[str]]:
         """Checks the password, and scans for which projects this user is a part of. Returns a dict
@@ -197,6 +252,7 @@ class LDAPClient:
         task.add_done_callback(_ldap_operation_done)
         done, _pending = await asyncio.wait({task}, timeout=LDAP_TIMEOUT)
         if not done:
+            self._given_up = True
             LOGGER.error("LDAP did not answer within %s seconds for user %s", LDAP_TIMEOUT, self.userid)
             raise _unavailable()
         return task.result()
@@ -213,7 +269,7 @@ class LDAPClient:
             # request waits for LDAP, another may remove it from the cache.
             cached = LDAP_CACHE.get(self.userid)
             if cached is not None and cached[0] > (time.time() - DEFAULT_LDAP_CACHE_TTL):
-                async with self.client.connect():
+                async with self._connected():
                     pass
                 # The password was right, so this counts as a use: move the lookup to the end, where
                 # it is the last to be dropped. (Unless it has been removed or renewed meanwhile.)
@@ -222,7 +278,7 @@ class LDAPClient:
                 return cached[1]
             else:
                 ldap_groups: dict[str, list[str]] = {attr: [] for attr in attrs}
-                async with self.client.connect() as conn:
+                async with self._connected() as conn:
                     rv = await conn.search(all_projects, attrs)
                     if not rv:
                         raise Exception("Empty result set returned by LDAP")  # pylint: disable=broad-exception-raised
@@ -244,6 +300,8 @@ class LDAPClient:
             # What LDAP said goes to the log, and not to the client
             _log_failed_login(self.userid, e)
             raise base.ASFQuartException("Invalid credentials provided", errorcode=403) from e
+        except _GivenUpError:
+            raise _unavailable() from None  # it was logged when the request stopped waiting
         except Exception as e:
             LOGGER.error("LDAP lookup for user %s failed: %s: %s", self.userid, type(e).__name__, e)
             raise _unavailable() from e
