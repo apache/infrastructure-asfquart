@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ASFQuart - LDAP Authentication methods and decorators"""
 
+import logging
 import re
 import time
 
@@ -36,6 +37,40 @@ except ModuleNotFoundError:
     LDAP_SUPPORTED = False
 
 LDAP_CACHE: dict[str, tuple[float, dict[str, list[str]]]] = {}  # Temporary one-hour cache to speed up lookups.
+
+LOGGER = logging.getLogger(__name__)
+
+# A wrong password is logged, so that somebody guessing passwords can be seen. For one user it
+# is logged at most this often, in seconds, with a count of the failures in between, so that a
+# flood of guesses does not become a flood in the log.
+FAILED_LOGIN_LOG_INTERVAL = 60
+# The users whose failures are being counted. No more than this many are kept; a user who is
+# dropped is logged again at their next failure.
+MAX_FAILED_LOGIN_USERS = 1000
+# user id -> (when a failure was last logged, failures since then that were not logged)
+_FAILED_LOGINS: dict[str, tuple[float, int]] = {}
+
+
+def _log_failed_login(userid: str, error: Exception) -> None:
+    """Logs that LDAP refused this user's password. The user id has the form of an ASF user id,
+    having been checked before LDAP was asked, so it is safe in a log. The password is not logged."""
+    now = time.time()
+    logged_at, unlogged = _FAILED_LOGINS.pop(userid, (0.0, 0))
+    if now - logged_at < FAILED_LOGIN_LOG_INTERVAL:
+        _FAILED_LOGINS[userid] = (logged_at, unlogged + 1)  # back at the end, as the latest to fail
+        return
+    while len(_FAILED_LOGINS) >= MAX_FAILED_LOGIN_USERS:
+        del _FAILED_LOGINS[next(iter(_FAILED_LOGINS))]  # the one that failed longest ago
+    _FAILED_LOGINS[userid] = (now, 0)
+    if unlogged:
+        LOGGER.warning(
+            "HTTP Basic authentication failed for user %s: %s (and %d more times since this was last logged)",
+            userid,
+            error,
+            unlogged,
+        )
+    else:
+        LOGGER.warning("HTTP Basic authentication failed for user %s: %s", userid, error)
 
 
 def _purge_ldap_cache(max_size: int) -> None:
@@ -109,9 +144,11 @@ class LDAPClient:
                 return ldap_groups
 
         except bonsai.errors.AuthenticationError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
-            raise base.ASFQuartException(f"Invalid credentials provided: {e}", errorcode=403)
+            # What LDAP said goes to the log, and not to the client
+            _log_failed_login(self.userid, e)
+            raise base.ASFQuartException("Invalid credentials provided", errorcode=403) from e
         except Exception as e:
-            print(f"Base exception during LDAP lookup: {e}")
+            LOGGER.error("LDAP lookup for user %s failed: %s: %s", self.userid, type(e).__name__, e)
             raise base.ASFQuartException(
                 "Could not perform LDAP authorization check, please try again later.", errorcode=500
-            )
+            ) from e

@@ -118,6 +118,7 @@ Think before turning it on:
 - **The application sees the password**, on every request.
 - **Every request is checked against LDAP**, and so is every wrong guess. asfquart does not
   limit how often a client may try, so that has to be done in front of the application.
+  What asfquart does is log the failures; see [Failed logins](#failed-logins) below.
 - **The session has less in it**: `uid`, `committees` and `projects`. `is_member`, `is_chair`
   and `is_root` are not looked up, so the requirements that read them are not met.
 
@@ -126,6 +127,37 @@ username and password are checked, and what happens when LDAP cannot be reached,
 [External services](external-services.md#ldap).
 
 In asfquart 0.1.12 and earlier, Basic authentication was always on.
+
+### Failed logins
+
+When LDAP refuses a password, asfquart logs a warning on the `asfquart.ldap` logger, so that
+somebody guessing passwords can be seen:
+
+```
+HTTP Basic authentication failed for user testuser: Invalid credentials. (0x0031 [49])
+```
+
+- The line has the user id and what LDAP said. It never has the password.
+- For one user it is logged at most once a minute. Failures in between are counted, and the
+  next line for that user says how many there were:
+  `... (and 250 more times since this was last logged)`. A flood of guesses is therefore a
+  line a minute for each user that is being guessed at, not a line for each guess. The count
+  appears when that user next fails after the minute is up; if the guessing stops, the last
+  count is not logged.
+- The line does not have the address of the client. Behind a reverse proxy asfquart sees the
+  proxy's address for every request; the proxy's own log has the client's.
+- A request that is refused before LDAP is asked is not logged: a username that does not
+  have the form of an ASF user id, or an empty password. Neither is a guess at a password.
+- The response is `403 Invalid credentials provided` in every case. What LDAP said goes to
+  the log only.
+
+This is for seeing an attack, and does nothing to slow one. asfquart does not refuse a
+client that keeps failing: it cannot tell clients apart behind a proxy, and refusing by user
+id would let anybody lock a user out by guessing wrongly on purpose. Limit the rate of
+requests at the proxy, and rely on the password policy of the LDAP server for lockout.
+
+An LDAP error of any other kind (the server cannot be reached, say) is logged as an error on
+the same logger, and the response is a `500`.
 
 ## Role account management via declared PAT handler
 Role accounts (or regular users) can access asfquart apps by using a bearer token, so long as a personal app token (PAT) handler

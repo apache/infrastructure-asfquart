@@ -117,6 +117,12 @@ Changes in 0.1.13:
    dictionary nor has `model_dump()`. It was an error from quart that did not say why.
  - An `Authorization` header that does not parse no longer causes an error.
 
+ - A password that LDAP refuses for HTTP Basic authentication is logged as a warning, with the
+   user id and without the password, at most once a minute for one user and with a count of the
+   failures in between. Until now a wrong password left no trace. The 403 response no longer
+   includes the error text from LDAP, which goes to the log instead, and an unexpected LDAP error
+   is logged, not printed. See "Failed logins" in `docs/sessions.md`.
+
  Requests and responses
  - `utils.formdata()` refuses a form larger than the new `MAX_FORM_CONTENT_LENGTH` config option
    (default 100 KB) with a 413, before the form is parsed. The limit is separate from quart's

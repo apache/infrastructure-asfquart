@@ -491,3 +491,166 @@ async def test_other_credentials_do_not_depend_on_basic_auth():
 def test_quartapp_has_basic_auth_off():
     """An app made with QuartApp directly, and not construct(), has it off too"""
     assert asfquart.base.QuartApp("ldap_quartapp", token_file=None).basic_auth is False
+
+
+# ---- Failed logins are logged ----
+
+
+class _RefusingDirectory:
+    """Stands in for asfpy.aioldap: refuses the password of every user, and counts the attempts"""
+
+    def __init__(self, error):
+        self.error = error
+        self.binds = []
+
+    def LDAPClient(self, uri, dn, password):  # noqa: N802 - stands in for bonsai.LDAPClient
+        directory = self
+
+        class Connection:
+            async def __aenter__(self):
+                directory.binds.append(dn)
+                raise directory.error
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return types.SimpleNamespace(connect=Connection)
+
+
+@pytest.fixture
+def refusing(monkeypatch, directory):
+    """An LDAP directory that refuses every password, with the clock of the directory fixture"""
+    fake = _RefusingDirectory(PermissionError("Invalid credentials. (0x0031 [49])"))
+    fake.clock = directory.clock
+    monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=fake), raising=False)
+    monkeypatch.setattr(asfquart.ldap, "_FAILED_LOGINS", {})
+    return fake
+
+
+async def _refused(username):
+    with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+        await asfquart.ldap.LDAPClient(username, "hunter2-wrong-password").get_affiliations()
+    return excinfo.value
+
+
+def _failure_lines(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "asfquart.ldap" and r.levelname == "WARNING"]
+
+
+@pytest.mark.auth
+async def test_failed_basic_login_is_logged(refusing, caplog):
+    error = await _refused("alice")
+    assert error.errorcode == 403
+    assert _failure_lines(caplog) == [
+        "HTTP Basic authentication failed for user alice: Invalid credentials. (0x0031 [49])"
+    ]
+    assert "hunter2" not in caplog.text
+
+
+@pytest.mark.auth
+async def test_failed_basic_login_response_does_not_say_what_ldap_said(refusing):
+    """The response is the same as for a username that is refused without asking LDAP"""
+    error = await _refused("alice")
+    assert error.message == "Invalid credentials provided"
+    assert isinstance(error.__cause__, PermissionError)
+
+
+@pytest.mark.auth
+async def test_failed_basic_logins_for_one_user_are_logged_once_a_minute(refusing, caplog):
+    """A flood of guesses is a line a minute with a count, and every guess still reaches LDAP"""
+    for _ in range(251):
+        await _refused("alice")
+    assert len(_failure_lines(caplog)) == 1
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL - 1
+    await _refused("alice")
+    assert len(_failure_lines(caplog)) == 1
+    refusing.clock.now += 1
+    await _refused("alice")
+    lines = _failure_lines(caplog)
+    assert len(lines) == 2
+    assert lines[1].endswith("(and 251 more times since this was last logged)")
+    assert len(refusing.binds) == 253
+    # The count starts again
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    await _refused("alice")
+    assert "more times" not in _failure_lines(caplog)[2]
+
+
+@pytest.mark.auth
+async def test_failed_basic_logins_are_counted_for_each_user(refusing, caplog):
+    """One user being guessed at does not hide another"""
+    for _ in range(5):
+        await _refused("alice")
+    await _refused("bob")
+    lines = _failure_lines(caplog)
+    assert len(lines) == 2
+    assert "for user alice:" in lines[0]
+    assert "for user bob:" in lines[1]
+
+
+@pytest.mark.auth
+async def test_failed_basic_login_records_are_bounded(refusing, monkeypatch, caplog):
+    """Guessing at many user ids does not grow the record of failures without limit"""
+    monkeypatch.setattr(asfquart.ldap, "MAX_FAILED_LOGIN_USERS", 3)
+    for user in ("aa", "bb", "cc", "dd", "ee"):
+        await _refused(user)
+    assert list(asfquart.ldap._FAILED_LOGINS) == ["cc", "dd", "ee"]
+    await _refused("dd")  # counted, not logged, and now the latest to fail
+    assert list(asfquart.ldap._FAILED_LOGINS) == ["cc", "ee", "dd"]
+    assert len(_failure_lines(caplog)) == 5
+    await _refused("aa")  # was dropped, so it is logged again
+    assert len(_failure_lines(caplog)) == 6
+    assert list(asfquart.ldap._FAILED_LOGINS) == ["ee", "dd", "aa"]
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize(
+    "username, password", [("Not A User", "password"), ("uid=x,ou=people", "password"), ("alice", "")]
+)
+async def test_request_refused_before_ldap_is_not_logged(refusing, caplog, username, password):
+    """These are not guesses at a password, and a username that was not checked does not go in the log"""
+    with pytest.raises(asfquart.base.ASFQuartException):
+        asfquart.ldap.LDAPClient(username, password)
+    assert _failure_lines(caplog) == []
+    assert refusing.binds == []
+    assert asfquart.ldap._FAILED_LOGINS == {}
+
+
+@pytest.mark.auth
+async def test_successful_basic_login_is_not_logged(directory, monkeypatch, caplog):
+    monkeypatch.setattr(asfquart.ldap, "_FAILED_LOGINS", {})
+    await _lookup("alice")
+    assert [r for r in caplog.records if r.name == "asfquart.ldap"] == []
+
+
+@pytest.mark.auth
+async def test_ldap_error_is_logged_and_not_printed(refusing, caplog, capsys):
+    refusing.error = ConnectionError("Can't contact LDAP server")
+    error = await _refused("alice")
+    assert error.errorcode == 500
+    assert error.message == "Could not perform LDAP authorization check, please try again later."
+    errors = [r.getMessage() for r in caplog.records if r.name == "asfquart.ldap" and r.levelname == "ERROR"]
+    assert errors == ["LDAP lookup for user alice failed: ConnectionError: Can't contact LDAP server"]
+    assert _failure_lines(caplog) == []  # not a wrong password
+    assert "hunter2" not in caplog.text
+    captured = capsys.readouterr()
+    assert captured.out == "" and "LDAP" not in captured.err
+
+
+@pytest.mark.auth
+async def test_failed_basic_login_through_an_endpoint(refusing, monkeypatch, caplog):
+    """The whole way: a 403 in plain text without LDAP's words, and the warning in the log"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_SUPPORTED", True)
+    app = asfquart.construct("ldap_failed_login", token_file=None, basic_auth=True)
+
+    @app.route("/protected")
+    @asfquart.auth.require
+    async def protected():
+        return "in"
+
+    credentials = "Basic " + base64.b64encode(b"alice:hunter2-wrong-password").decode()
+    resp = await app.test_client().get("/protected", headers={"Authorization": credentials})
+    assert resp.status_code == 403
+    assert (await resp.get_data()).decode() == "Invalid credentials provided"
+    assert len(_failure_lines(caplog)) == 1
+    assert "hunter2" not in caplog.text and credentials not in caplog.text

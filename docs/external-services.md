@@ -101,8 +101,11 @@ so the cache does not grow with attempts to log in.
 
 | What happens | Response to the user |
 |---|---|
-| LDAP refuses the username and password | `403 Invalid credentials provided: ` followed by the error from LDAP |
+| LDAP refuses the username and password | `403 Invalid credentials provided` |
 | LDAP cannot be reached, fails, or returns nothing | `500 Could not perform LDAP authorization check, please try again later.` |
+
+In both cases the reason that LDAP gave is in the application's log, and not in the response.
+See [Failed logins](sessions.md#failed-logins) for what is logged.
 
 When LDAP cannot be reached:
 
