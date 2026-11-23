@@ -145,6 +145,9 @@ Changes in 0.1.13:
  - New page listing the checks asfquart makes on its input, where each rule is in the source, and
    what is left to the application (`docs/input-validation.md`, #125). Its tables of values and
    examples are compared with the code by the tests.
+ - New page on running behind a reverse proxy (`docs/reverse-proxy.md`): asfquart does not send a
+   `Strict-Transport-Security` header, which is for the proxy to set, and what else the proxy
+   has to do.
 
  Other
  - `import asfquart` now imports `asfquart.auth` as well.
