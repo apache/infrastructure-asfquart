@@ -50,6 +50,7 @@ this, what goes wrong otherwise, and what would have to change to support more.
 ## See also (WIP):
 
 - [Setting up OAuth](oauth.md)
+- [Behind a reverse proxy: HSTS, and what else the proxy has to do](reverse-proxy.md)
 - [External services, and what happens when they fail](external-services.md)
 - [Limits: how long, how large and how many](limits.md)
 - [Session handling](sessions.md)
