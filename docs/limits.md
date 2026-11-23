@@ -90,6 +90,8 @@ authentication; see [External services](external-services.md#ldap).
 |---|---|---|---|
 | Time a user's project memberships are kept | 3,600 seconds (an hour) | They are looked up again at the user's next request | `ldap.DEFAULT_LDAP_CACHE_TTL` |
 | Users whose memberships are kept | 1,000 | The one used longest ago is dropped, and looked up again when next needed | `ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` |
+| How often a wrong password is logged for one user | Once in 60 seconds, with a count of the failures in between | Not a limit on logging in: it keeps a flood of guesses from flooding the log | `ldap.FAILED_LOGIN_LOG_INTERVAL` |
+| Users whose wrong passwords are being counted | 1,000 | The one that failed longest ago is dropped, and is logged again at their next failure | `ldap.MAX_FAILED_LOGIN_USERS` |
 
 A change to a user's memberships in LDAP can therefore take up to an hour to be seen. The
 password is not cached: it is checked against LDAP on every request.
@@ -124,6 +126,8 @@ this table with the code.
 | `asfquart.utils.DEFAULT_MAX_FORM_CONTENT_LENGTH` | `102400` |
 | `asfquart.ldap.DEFAULT_LDAP_CACHE_TTL` | `3600` |
 | `asfquart.ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` | `1000` |
+| `asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL` | `60` |
+| `asfquart.ldap.MAX_FAILED_LOGIN_USERS` | `1000` |
 | `asfquart.base.SECRETS_FILE_MODE` | `384` |
 
 `384` is `0600` written in decimal. The default of `workflow_timeout`, 900, is an argument of
