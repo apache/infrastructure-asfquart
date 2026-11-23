@@ -124,6 +124,13 @@ Changes in 0.1.13:
    includes the error text from LDAP, which goes to the log instead, and an unexpected LDAP error
    is logged, not printed. See "Failed logins" in `docs/sessions.md`.
 
+ - A request waits for LDAP for at most 30 seconds (`ldap.LDAP_TIMEOUT`), and at most 10 LDAP
+   checks go on at one time (`ldap.MAX_LDAP_OPERATIONS`), counting those that a request has
+   stopped waiting for. Until now there was no limit on either, so an LDAP server that did not
+   answer held a thread and a connection for every request with HTTP Basic authentication. Past
+   either limit the request is a 500, as it is when LDAP cannot be reached. An LDAP check is not
+   retried. See "LDAP" in `docs/external-services.md`.
+
  Requests and responses
  - `utils.formdata()` refuses a form larger than the new `MAX_FORM_CONTENT_LENGTH` config option
    (default 100 KB) with a 413, before the form is parsed. The limit is separate from quart's

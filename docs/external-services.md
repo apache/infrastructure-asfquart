@@ -103,17 +103,35 @@ so the cache does not grow with attempts to log in.
 |---|---|
 | LDAP refuses the username and password | `403 Invalid credentials provided` |
 | LDAP cannot be reached, fails, or returns nothing | `500 Could not perform LDAP authorization check, please try again later.` |
+| LDAP does not answer within 30 seconds | The same `500` |
+| Ten LDAP checks are already going on | The same `500`, at once, without asking LDAP |
 
-In both cases the reason that LDAP gave is in the application's log, and not in the response.
+In every case the reason is in the application's log, and not in the response.
 See [Failed logins](sessions.md#failed-logins) for what is logged.
 
 When LDAP cannot be reached:
 
 - Every request that authenticates with `Authorization: Basic` (and so has no session
   cookie) fails with the `500` above, including those of users whose memberships are cached.
-- The error is printed to standard output (`Base exception during LDAP lookup`).
-- asfquart sets no timeout of its own on the connection, and does not retry. There is one
-  server, and no fallback.
+- The error is logged on the `asfquart.ldap` logger.
+- A request waits for LDAP for at most 30 seconds (`asfquart.ldap.LDAP_TIMEOUT`), which
+  covers connecting, checking the password and looking up the memberships.
+- asfquart does not retry. A second attempt would be a second check of the password, against
+  a server that is already in difficulty. There is one server, and no fallback.
+
+When LDAP accepts connections and then does not answer:
+
+- A request gives up after the 30 seconds, but the connection it was waiting for cannot be
+  stopped from asfquart. It is made by `asfpy.aioldap` in a thread of its own, which is why a
+  slow LDAP server does not hold up other requests, and that thread goes on until LDAP
+  answers or the connection fails.
+- So that these do not pile up, at most 10 LDAP checks go on at one time
+  (`asfquart.ldap.MAX_LDAP_OPERATIONS`), and one that a request has given up on still counts
+  until it really ends. While there are 10, a request with `Authorization: Basic` is refused
+  at once with the `500`, and LDAP is not asked. The log says so, at most once a minute.
+- That is the most that an LDAP server which has stopped answering can hold: 10 threads and
+  10 connections. If it never answers and the connections never fail, HTTP Basic
+  authentication stays unavailable until the application is restarted.
 - OAuth logins, sessions, and bearer tokens are not affected: they do not use LDAP.
 
 ## Using other endpoints
