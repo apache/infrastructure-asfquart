@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for ldap.py: the username is validated before it is placed in a DN"""
 
+import asyncio
 import base64
 import types
 
@@ -758,3 +759,175 @@ async def test_failed_basic_login_through_an_endpoint(refusing, monkeypatch, cap
     assert (await resp.get_data()).decode() == "Invalid credentials provided"
     assert len(_failure_lines(caplog)) == 1
     assert "hunter2" not in caplog.text and credentials not in caplog.text
+
+
+# ---- A time limit on LDAP, and a limit on how many checks go on at once ----
+
+
+class _SlowDirectory:
+    """Stands in for asfpy.aioldap: connecting waits until the test lets it go on, as it would
+    for an LDAP server that accepts the connection and does not answer"""
+
+    def __init__(self):
+        self.binds = []
+        self.go_on = asyncio.Event()
+        self.refuse = False
+
+    def LDAPClient(self, uri, dn, password):  # noqa: N802 - stands in for bonsai.LDAPClient
+        directory = self
+
+        class Connection:
+            async def __aenter__(self):
+                directory.binds.append(dn)
+                await directory.go_on.wait()
+                if directory.refuse:
+                    raise PermissionError("Invalid credentials. (0x0031 [49])")
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def search(self, base, attrs):
+                return [{"dn": "cn=testproject,ou=project,ou=groups,dc=apache,dc=org", "member": [dn], "owner": []}]
+
+        return types.SimpleNamespace(connect=Connection)
+
+
+@pytest.fixture
+def slow(monkeypatch, directory):
+    """An LDAP directory that does not answer until the test says so, and a short time limit"""
+    fake = _SlowDirectory()
+    fake.clock = directory.clock
+    monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=fake), raising=False)
+    monkeypatch.setattr(asfquart.ldap, "_FAILED_LOGINS", {})
+    monkeypatch.setattr(asfquart.ldap, "_ldap_operations", 0)
+    monkeypatch.setattr(asfquart.ldap, "_busy_logged_at", 0.0)
+    monkeypatch.setattr(asfquart.ldap, "LDAP_TIMEOUT", 0.05)
+    return fake
+
+
+async def _unavailable(username):
+    with pytest.raises(asfquart.base.ASFQuartException) as excinfo:
+        await _lookup(username)
+    assert excinfo.value.errorcode == 500
+    assert excinfo.value.message == "Could not perform LDAP authorization check, please try again later."
+
+
+async def _settle():
+    """Lets the work that was left going on run to its end"""
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+def _errors(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "asfquart.ldap" and r.levelname == "ERROR"]
+
+
+@pytest.mark.auth
+async def test_ldap_that_does_not_answer_is_given_up_on(slow, caplog):
+    """The request gets its answer after the time limit, and the log says why"""
+    await _unavailable("alice")
+    assert _errors(caplog) == ["LDAP did not answer within 0.05 seconds for user alice"]
+    assert "password" not in caplog.text
+    slow.go_on.set()
+    await _settle()
+
+
+@pytest.mark.auth
+async def test_ldap_check_that_was_given_up_on_still_counts_until_it_ends(slow):
+    """The connection cannot be stopped, so it is counted for as long as it lasts"""
+    await _unavailable("alice")
+    assert asfquart.ldap._ldap_operations == 1
+    slow.go_on.set()
+    await _settle()
+    assert asfquart.ldap._ldap_operations == 0
+    # It ran to its end: the lookup that came back late is in the cache
+    assert list(asfquart.ldap.LDAP_CACHE) == ["alice"]
+
+
+@pytest.mark.auth
+async def test_ldap_checks_at_one_time_are_limited(slow, monkeypatch, caplog):
+    """An LDAP server that has stopped answering holds no more than the limit, however many requests come"""
+    monkeypatch.setattr(asfquart.ldap, "MAX_LDAP_OPERATIONS", 3)
+    for user in ("aa", "bb", "cc"):
+        await _unavailable(user)  # each waits out the time limit, and is left going on
+    assert len(slow.binds) == 3
+    for user in ("dd", "ee", "ff", "aa"):
+        await asyncio.wait_for(_unavailable(user), timeout=0.01)  # refused at once
+    assert len(slow.binds) == 3  # LDAP was not asked again
+    assert asfquart.ldap._ldap_operations == 3
+    busy = [line for line in _errors(caplog) if "which is the most allowed" in line]
+    assert busy == [
+        "3 LDAP checks are going on, which is the most allowed; refusing more until one ends. LDAP may not be answering"
+    ]
+    # A minute later it is logged again
+    slow.clock.now += 60
+    await _unavailable("dd")
+    assert len([line for line in _errors(caplog) if "which is the most allowed" in line]) == 2
+    # When LDAP answers, the checks end, and there is room again
+    slow.go_on.set()
+    await _settle()
+    assert asfquart.ldap._ldap_operations == 0
+    assert await _lookup("dd") == {"member": ["testproject"], "owner": []}
+    assert asfquart.ldap._ldap_operations == 0
+
+
+@pytest.mark.auth
+async def test_ldap_checks_within_the_limit_run_side_by_side(slow, monkeypatch):
+    monkeypatch.setattr(asfquart.ldap, "LDAP_TIMEOUT", 5)
+    lookups = [asyncio.ensure_future(_lookup(user)) for user in ("aa", "bb", "cc")]
+    await _settle()
+    assert asfquart.ldap._ldap_operations == 3
+    slow.go_on.set()
+    assert await asyncio.gather(*lookups) == [{"member": ["testproject"], "owner": []}] * 3
+    assert asfquart.ldap._ldap_operations == 0
+
+
+@pytest.mark.auth
+async def test_wrong_password_found_out_late_is_still_logged(slow, caplog):
+    """The request had given up, but LDAP did refuse the password in the end, and that is worth knowing"""
+    slow.refuse = True
+    await _unavailable("alice")
+    slow.go_on.set()
+    await _settle()
+    assert asfquart.ldap._ldap_operations == 0
+    warnings = [r.getMessage() for r in caplog.records if r.name == "asfquart.ldap" and r.levelname == "WARNING"]
+    assert warnings == ["HTTP Basic authentication failed for user alice: Invalid credentials. (0x0031 [49])"]
+    # and asyncio has nothing to say about an exception that nobody looked at
+    assert [r for r in caplog.records if r.name == "asyncio"] == []
+
+
+@pytest.mark.auth
+async def test_request_that_goes_away_leaves_the_check_counted(slow, monkeypatch):
+    """A client that disconnects cancels its request, and not the connection to LDAP"""
+    monkeypatch.setattr(asfquart.ldap, "LDAP_TIMEOUT", 5)
+    lookup = asyncio.ensure_future(_lookup("alice"))
+    await _settle()
+    lookup.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await lookup
+    assert asfquart.ldap._ldap_operations == 1
+    slow.go_on.set()
+    await _settle()
+    assert asfquart.ldap._ldap_operations == 0
+
+
+@pytest.mark.auth
+async def test_ldap_checks_are_counted_down_however_they_end(directory, refusing, monkeypatch):
+    """Right password, wrong password, LDAP error: none of them leaves a check counted"""
+    monkeypatch.setattr(asfquart.ldap, "_ldap_operations", 0)
+    await _refused("alice")
+    assert asfquart.ldap._ldap_operations == 0
+    refusing.error = ConnectionError("Can't contact LDAP server")
+    await _refused("alice")
+    assert asfquart.ldap._ldap_operations == 0
+    monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=directory), raising=False)
+    await _lookup("alice")
+    assert asfquart.ldap._ldap_operations == 0
+
+
+@pytest.mark.auth
+async def test_ldap_is_not_tried_again(refusing):
+    refusing.error = ConnectionError("Can't contact LDAP server")
+    await _refused("alice")
+    assert len(refusing.binds) == 1

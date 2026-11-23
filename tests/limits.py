@@ -264,10 +264,12 @@ async def test_logging_in_elsewhere_does_not_end_a_session():
     assert await _whoami(second) == "testuser"
 
 
-def test_no_time_limit_is_set_on_ldap():
-    """As the page says. If one is added, the page should give it."""
-    source = inspect.getsource(asfquart.ldap).lower()
-    assert "timeout" not in source
+def test_ldap_limits_are_the_ones_on_the_page():
+    """The numbers in the table of limits for LDAP; tests/ldap.py tests what they do"""
+    assert asfquart.ldap.LDAP_TIMEOUT == 30
+    assert asfquart.ldap.MAX_LDAP_OPERATIONS == 10
+    limits = TEXT[TEXT.index("## LDAP") : TEXT.index("## The application")]
+    assert "| 30 seconds |" in limits and "| 10 |" in limits
 
 
 def test_page_is_linked_from_the_index():

@@ -90,12 +90,23 @@ authentication; see [External services](external-services.md#ldap).
 |---|---|---|---|
 | Time a user's project memberships are kept | 3,600 seconds (an hour) | They are looked up again at the user's next request | `ldap.DEFAULT_LDAP_CACHE_TTL` |
 | Users whose memberships are kept | 1,000 | The one used longest ago is dropped, and looked up again when next needed | `ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` |
+| Time a request waits for LDAP to check a password and look up the memberships | 30 seconds | `500`, and the reason is logged. The work in LDAP is not stopped; see below | `ldap.LDAP_TIMEOUT` |
+| LDAP checks going on at one time, counting those that a request has stopped waiting for | 10 | `500` at once, without asking LDAP, and the reason is logged at most once a minute | `ldap.MAX_LDAP_OPERATIONS` |
+| Attempts at an LDAP check | One: it is not tried again | `500` | Not adjustable |
 | How often a wrong password is logged for one user | Once in 60 seconds, with a count of the failures in between | Not a limit on logging in: it keeps a flood of guesses from flooding the log | `ldap.FAILED_LOGIN_LOG_INTERVAL` |
 | Users whose wrong passwords are being counted | 1,000 | The one that failed longest ago is dropped. The failures that were counted are logged first, and the user is logged again at their next failure | `ldap.MAX_FAILED_LOGIN_USERS` |
 | Lines about wrong passwords, for all users together | 60 in 60 seconds | The failures past that are counted, and one line gives the count when the next 60 seconds begin. Not a limit on logging in | `ldap.FAILED_LOGIN_LOG_LIMIT` |
 
 A change to a user's memberships in LDAP can therefore take up to an hour to be seen. The
 password is not cached: it is checked against LDAP on every request.
+
+The two limits on LDAP checks work together. When LDAP does not answer, a request stops
+waiting after 30 seconds, but asfquart cannot stop the connection that it was waiting for:
+that goes on, in a thread, until LDAP answers or the connection fails. The second limit
+counts those as well, so that an LDAP server that has stopped answering holds at most ten
+threads and connections, however many requests arrive. While all ten are held, HTTP Basic
+authentication fails for everybody; nothing else in the application is affected. See
+[External services](external-services.md#ldap).
 
 ## The application
 
@@ -127,6 +138,8 @@ this table with the code.
 | `asfquart.utils.DEFAULT_MAX_FORM_CONTENT_LENGTH` | `102400` |
 | `asfquart.ldap.DEFAULT_LDAP_CACHE_TTL` | `3600` |
 | `asfquart.ldap.DEFAULT_LDAP_CACHE_MAX_ENTRIES` | `1000` |
+| `asfquart.ldap.LDAP_TIMEOUT` | `30` |
+| `asfquart.ldap.MAX_LDAP_OPERATIONS` | `10` |
 | `asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL` | `60` |
 | `asfquart.ldap.MAX_FAILED_LOGIN_USERS` | `1000` |
 | `asfquart.ldap.FAILED_LOGIN_LOG_LIMIT` | `60` |
@@ -161,7 +174,6 @@ another.
 - **How many sessions a user may have.** Logging in on another browser does not end the
   session on the first. With sessions kept in the cookie, asfquart has no record of the
   sessions that exist; a session store can count them and end them.
-- **How long a request to LDAP may take.** asfquart sets no time limit of its own on it.
 - **How long the application's `token_handler` may take**, or a session store's methods.
   They are called on the request, and the request waits.
 - **How long an endpoint may take to answer**, other than quart's time for the response.

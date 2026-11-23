@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ASFQuart - LDAP Authentication methods and decorators"""
 
+import asyncio
 import logging
 import re
 import time
@@ -55,6 +56,32 @@ _FAILED_LOGIN_LINES: list[float] = [0.0, 0, 0]
 MAX_FAILED_LOGIN_USERS = 1000
 # user id -> (when a failure was last logged, failures since then that were not logged)
 _FAILED_LOGINS: dict[str, tuple[float, int]] = {}
+
+# How long a request waits for LDAP to check a password and look up the memberships, in seconds.
+# After that the request is answered with an error. The work in LDAP cannot be stopped from here:
+# it goes on in a thread of asfpy.aioldap until LDAP answers or the connection fails.
+LDAP_TIMEOUT = 30
+# How many such pieces of work there may be at one time, counting those that a request has stopped
+# waiting for. Each one holds a thread and a connection, so without a limit an LDAP server that
+# does not answer would collect them for as long as requests kept coming. Over the limit, a
+# request is answered with an error at once, and LDAP is not asked.
+MAX_LDAP_OPERATIONS = 10
+_ldap_operations = 0  # how many there are now
+_busy_logged_at = 0.0  # when it was last logged that the limit was reached; at most once a minute
+
+
+def _unavailable() -> base.ASFQuartException:
+    """The error for an LDAP check that could not be made. The log says why; the client is not told."""
+    return base.ASFQuartException("Could not perform LDAP authorization check, please try again later.", errorcode=500)
+
+
+def _ldap_operation_done(task: "asyncio.Future[dict[str, list[str]]]") -> None:
+    """Called when the work in LDAP has ended, however it ended, and however long ago the request
+    that started it stopped waiting"""
+    global _ldap_operations
+    _ldap_operations -= 1
+    if not task.cancelled():
+        task.exception()  # looked at, so that asyncio does not report it as never retrieved
 
 
 def _failed_login_line(failures: int, message: str, *args: object) -> None:
@@ -146,9 +173,36 @@ class LDAPClient:
         # The ignores here and below: both modules are imported when LDAP_SUPPORTED
         self.client = asfpy.aioldap.LDAPClient(DEFAULT_LDAP_URI, self.dn, password)  # pyright: ignore[reportPossiblyUnboundVariable]
 
-    async def get_affiliations(self) -> dict[str, list[str]]:  # noqa: C901
-        """Scans for which projects this user is a part of. Returns a dict with memberships of each
-        pmc/committer role (member/owner in LDAP)"""
+    async def get_affiliations(self) -> dict[str, list[str]]:
+        """Checks the password, and scans for which projects this user is a part of. Returns a dict
+        with memberships of each pmc/committer role (member/owner in LDAP).
+
+        Waits for LDAP no longer than LDAP_TIMEOUT, and does not ask LDAP at all while
+        MAX_LDAP_OPERATIONS earlier checks are still going on. In both cases the error is the
+        one for an LDAP server that cannot be reached."""
+        global _ldap_operations, _busy_logged_at
+        if _ldap_operations >= MAX_LDAP_OPERATIONS:
+            if time.time() - _busy_logged_at >= 60:
+                _busy_logged_at = time.time()
+                LOGGER.error(
+                    "%d LDAP checks are going on, which is the most allowed; refusing more until one ends."
+                    " LDAP may not be answering",
+                    _ldap_operations,
+                )
+            raise _unavailable()
+        _ldap_operations += 1
+        # A task of its own, so that it runs to its end when this request stops waiting for it or
+        # goes away, and is counted until then. asyncio.wait() leaves the task alone in both cases.
+        task = asyncio.ensure_future(self._lookup_affiliations())
+        task.add_done_callback(_ldap_operation_done)
+        done, _pending = await asyncio.wait({task}, timeout=LDAP_TIMEOUT)
+        if not done:
+            LOGGER.error("LDAP did not answer within %s seconds for user %s", LDAP_TIMEOUT, self.userid)
+            raise _unavailable()
+        return task.result()
+
+    async def _lookup_affiliations(self) -> dict[str, list[str]]:  # noqa: C901
+        """The work of get_affiliations() in LDAP, without its limits"""
         all_projects = DEFAULT_LDAP_GROUP_BASE
         attrs = [DEFAULT_MEMBER_ATTR, DEFAULT_OWNER_ATTR]
         # Lookups that have expired are not left in the cache until the same user comes back
@@ -192,6 +246,4 @@ class LDAPClient:
             raise base.ASFQuartException("Invalid credentials provided", errorcode=403) from e
         except Exception as e:
             LOGGER.error("LDAP lookup for user %s failed: %s: %s", self.userid, type(e).__name__, e)
-            raise base.ASFQuartException(
-                "Could not perform LDAP authorization check, please try again later.", errorcode=500
-            ) from e
+            raise _unavailable() from e

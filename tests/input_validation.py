@@ -88,9 +88,13 @@ def test_every_validation_constant_is_on_the_page():
             )  # those two parse LDAP's answers
             is_limit = attr.startswith(("MAX_", "DEFAULT_MAX_"))
             if is_rule or is_limit:
-                # The two that are left out limit what is kept in memory, and are in docs/limits.md
-                kept_in_memory = attr in ("DEFAULT_LDAP_CACHE_MAX_ENTRIES", "MAX_FAILED_LOGIN_USERS")
-                assert f"{module.__name__}.{attr}" in documented or kept_in_memory, attr
+                # Those that are left out limit what asfquart keeps or does, and are in docs/limits.md
+                not_about_input = attr in (
+                    "DEFAULT_LDAP_CACHE_MAX_ENTRIES",
+                    "MAX_FAILED_LOGIN_USERS",
+                    "MAX_LDAP_OPERATIONS",
+                )
+                assert f"{module.__name__}.{attr}" in documented or not_about_input, attr
 
 
 # ---- The tables of examples ----
