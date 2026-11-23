@@ -132,6 +132,10 @@ Changes in 0.1.13:
    403, a non-callable `token_handler` raises `TypeError`.
 
  Documentation
+ - `Requirements.committer` is documented as what it is: it passes for any session, which at the
+   ASF means a committer, and it does not look at projects or tell a role account from a person.
+   `docs/auth.md` says so, with an example of a requirement of one's own for an app that needs
+   more. Its behaviour has not changed.
  - New page that brings together the limits in asfquart, each with its default, what happens when
    it is reached and how to change it, and what has no limit (`docs/limits.md`, #127). Its tables
    of values are compared with the code by the tests.

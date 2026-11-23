@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pathlib
 import re
 import time
 import warnings
@@ -559,3 +560,68 @@ async def test_require_leaves_other_attribute_errors_alone(monkeypatch):
 
     with pytest.raises(AttributeError, match="nothing"):
         await endpoint()
+
+
+# ---- What Requirements.committer means (docs/auth.md) ----
+
+_AUTH_DOC = pathlib.Path(__file__).parent.parent / "docs" / "auth.md"
+
+
+def _documented_requirements():
+    """Runs the example of requirements of one's own from docs/auth.md against a new app, and
+    returns the app and the class that the example defines"""
+    text = _AUTH_DOC.read_text(encoding="utf-8")
+    section = text[text.index("## What `committer` means") :]
+    code = section[section.index("```python\n") + len("```python\n") :]
+    code = code[: code.index("```")]
+    app = asfquart.construct("documented_requirements", token_file=None)
+    namespace = {}
+    exec(code, namespace)  # noqa: S102 - the example from our own documentation
+    return app, namespace["MyRequirements"]
+
+
+@pytest.mark.auth
+@pytest.mark.parametrize(
+    "session_data",
+    [
+        {"uid": "testuser"},  # in no project, and nothing else known about them
+        {"uid": "testuser", "projects": ["httpd"], "pmcs": ["httpd"], "isMember": True},
+        {"uid": "rolebot", "roleaccount": True},  # a role account
+        {},  # a session that the application wrote, with nothing in it
+    ],
+)
+def test_committer_passes_for_any_session(session_data):
+    """As documented: it is a test for a session, and reads nothing from it"""
+    assert R.committer(asfquart.session.ClientSession(session_data)) == (True, R.E_NOT_LOGGED_IN)
+    assert R.committer(object())[0] is True  # a session store's own class, with no attributes at all
+    assert R.committer(None)[0] is False
+
+
+@pytest.mark.auth
+def test_committer_is_documented_as_any_session():
+    """The docstring and the page say what the code does, so that neither promises a check of projects"""
+    assert "any session passes" in R.committer.__doc__
+    text = _AUTH_DOC.read_text(encoding="utf-8")
+    assert "User must be a committer of any project" not in text
+    assert "`Requirements.committer` passes for any session" in text
+
+
+@pytest.mark.auth
+async def test_documented_requirements_of_ones_own():
+    """The example in docs/auth.md for an app that needs more than committer works as it says"""
+    app, mine = _documented_requirements()
+    person = asfquart.session.ClientSession({"uid": "testuser"})
+    project_committer = asfquart.session.ClientSession({"uid": "testuser", "projects": ["httpd"]})
+    role = asfquart.session.ClientSession({"uid": "rolebot", "roleaccount": True, "projects": ["httpd"]})
+    assert mine.person(person)[0] is True
+    assert mine.person(role) == (False, "This endpoint is not open to role accounts.")
+    assert mine.project_committer(person) == (False, "This endpoint is only accessible to committers of a project.")
+    assert mine.project_committer(project_committer)[0] is True
+    assert R.committer(role)[0] is True  # which is why the example exists
+
+    app.token_handler = lambda token: {"uid": "rolebot", "roleaccount": True, "projects": ["httpd"]}
+    client = app.test_client()
+    for path in ("/people-only", "/project-committers"):
+        resp = await client.get(path, headers={"Authorization": "Bearer a-token"})
+        assert resp.status_code == 403
+        assert (await resp.get_data()).decode() == "This endpoint is not open to role accounts."
