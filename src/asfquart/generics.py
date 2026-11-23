@@ -238,6 +238,48 @@ def _oauth_data_problem(oauth_data: object) -> str | None:
     return None
 
 
+_warned_no_origin_uri = False  # so the warning below is logged once per process, not per login
+
+
+def _oauth_origin_problem(oauth_data: dict[str, typing.Any], callback_url: str) -> str | None:
+    """Tests whether the OAuth provider's response is for the login that this app started. Returns
+    None if it is, or if the response does not say, and otherwise what is wrong, for the log.
+
+    The provider gives its user's details to whoever presents a code, and a code is not tied to
+    the app that presents it. A code that the provider issued for a login at another app would
+    otherwise do here, and whoever had it would be logged in as its user. The provider's response
+    has origin_uri, the address that it was asked to send the browser back to. For a login that
+    this app started, that is callback_url: this app's own address, with the state of this login.
+
+    A response without origin_uri is accepted, as not every provider sends it, and that is
+    logged, once."""
+    global _warned_no_origin_uri
+    if "origin_uri" not in oauth_data:
+        if not _warned_no_origin_uri:
+            _warned_no_origin_uri = True
+            LOGGER.warning(
+                "The OAuth provider's response has no origin_uri, so it cannot be checked that the"
+                " response is for a login that this application started"
+            )
+        return None
+    origin_uri = oauth_data["origin_uri"]
+    if not isinstance(origin_uri, str):
+        return "origin_uri is not a string"
+    try:
+        origin, expected = urllib.parse.urlsplit(origin_uri), urllib.parse.urlsplit(callback_url)
+        # Compared in parts, and not as two strings, so that a provider which writes the same
+        # address another way (the query string encoded differently, say) is not turned away
+        same = (
+            (origin.scheme.lower(), origin.netloc.lower(), origin.path)
+            == (expected.scheme.lower(), expected.netloc.lower(), expected.path)
+        ) and urllib.parse.parse_qs(origin.query).get("state") == urllib.parse.parse_qs(expected.query)["state"]
+    except ValueError:
+        same = False
+    if not same:
+        return "response is for another login: origin_uri is not the callback address of this one"
+    return None
+
+
 def _purge_pending_states(pending_states: dict[str, list[typing.Any]], workflow_timeout: int, max_size: int) -> int:
     """Removes the pending logins that have expired, and then the oldest of the rest for as long as
     there are more than max_size. Returns how many were removed that had not expired.
@@ -351,13 +393,14 @@ def setup_oauth(  # noqa: C901
             # Logins that were started and never completed are not left to pile up: drop those
             # that have expired, and make room for this one if there are too many all the same
             purge_pending_states(max_pending_logins - 1)
-            # Save the time we initialized this state, the optional login redirect URI,
-            # and a digest of the browser cookie that is allowed to complete this login
-            pending_states[state] = [time.time(), login_uri, _browser_digest(browser)]
             callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
                 _callback_host(callback_host),
                 f"{uri}?state={state}",
             )
+            # Save the time we initialized this state, the optional login redirect URI,
+            # a digest of the browser cookie that is allowed to complete this login, and the
+            # address that the provider is asked to send the browser back to
+            pending_states[state] = [time.time(), login_uri, _browser_digest(browser), callback_url]
             redirect_url = OAUTH_URL_INIT % (state, urllib.parse.quote(callback_url))
             response = quart.redirect(redirect_url)
             response.set_cookie(
@@ -420,7 +463,9 @@ def setup_oauth(  # noqa: C901
                         rv = await _exchange_code(session, code)
                         if rv.status == 200:
                             oauth_data = await rv.json()
-                            problem = _oauth_data_problem(oauth_data)
+                            problem = _oauth_data_problem(oauth_data) or _oauth_origin_problem(
+                                oauth_data, state_data[3]
+                            )
                         else:
                             problem = f"provider answered with status {rv.status}"
                 except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as e:

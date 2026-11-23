@@ -73,6 +73,12 @@ Changes in 0.1.13:
    from an empty query string is dropped.
  - A session is only created when the OAuth provider's response is a JSON object with a `uid` in the
    form of an ASF user id (`generics.OAUTH_UID_RE`); anything else is a 403 (#132).
+ - The OAuth provider's response is only accepted if it is for the login that this app started:
+   its `origin_uri` must be the callback address of this login, with the same `state`. A code
+   that the provider issued for a login at another app, or for another login at this one, is
+   refused with a 403. The provider does not tie a code to the app that presents it, so such a
+   code would otherwise have logged its holder in as somebody else. A response without
+   `origin_uri` is accepted, with a warning logged once.
  - The exchange with the OAuth provider has a connect timeout (10s) and a total timeout (30s) next to
    the read timeout (`generics.OAUTH_TIMEOUT`). A provider that cannot be reached or is too slow is a
    403 rather than a 500 (#130).
