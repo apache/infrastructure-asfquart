@@ -62,7 +62,13 @@ class Requirements:
 
     @classmethod
     def committer(cls, client_session: typing.Any) -> tuple[bool, str]:
-        """Tests for whether the user is a committer on any project"""
+        """Tests for whether there is a session: any session passes, and nothing in it is read.
+
+        That is what "committer" means here. A session comes from the ASF OAuth provider (or from
+        LDAP, for HTTP Basic authentication), which only knows ASF accounts, and an ASF account
+        belongs to a committer. It is not a test of membership of a project: a committer who is in
+        no project group passes. So does a role account, and so does any session that the
+        application writes itself. It is the same test as a bare @require. See docs/auth.md."""
         return client_session is not None, cls.E_NOT_LOGGED_IN
 
     @classmethod
@@ -217,7 +223,7 @@ def require(
     of the asfquart.auth.Requirements class, which consists of the following test:
 
     - mfa_protected: The client must have logged in with MFA
-    - committer: The client must be a committer
+    - committer: The client must be logged in. Any session passes; see Requirements.committer
     - member: The client must be a foundation member
     - chair: The client must be a chair of a project
 

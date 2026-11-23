@@ -7,7 +7,8 @@ unless otherwise specified, automatically initiate an OAuth flow if unauthentica
 
 At present, asfquart features the following auth requirements:
 
-- `asfquart.auth.Requirements.committer`: User must be a committer of any project to access
+- `asfquart.auth.Requirements.committer`: User must be logged in. Any session passes, which at
+  the ASF means a committer; see [What `committer` means](#what-committer-means)
 - `asfquart.auth.Requirements.member`: User must be a member of the Foundation to access
 - `asfquart.auth.Requirements.pmc_member`: User must be a PMC member of any top-level project
 - `asfquart.auth.Requirements.chair`: User must be a chair of one or more projects
@@ -71,6 +72,64 @@ Until 0.1.13, `is_member`, `is_chair`, `is_root` and `is_role` were `isMember`, 
 `isRoot` and `isRole`. The old names still work, with a `DeprecationWarning`, both on a
 `ClientSession` and on a session store's own class. A `ClientSession` is also a dictionary, and
 its keys keep the old names, so what `/auth` returns is unchanged.
+
+## What `committer` means
+
+`Requirements.committer` passes for any session, and reads nothing from it. It is the same
+test as a bare `@asfquart.auth.require`, under a name that says who is expected.
+
+The name is right for the ASF because of where sessions come from. The ASF OAuth provider,
+and LDAP for HTTP Basic authentication, only know ASF accounts, and an ASF account belongs to
+a committer. Being logged in and being a committer are then the same thing.
+
+It is not a test of anything more than that:
+
+- **It does not look at projects.** A committer who is in no project group passes: one whose
+  projects have retired, say. To require membership of a project, test `projects` or
+  `committees` in a requirement of your own.
+- **A role account passes.** A session that the application's `token_handler` returns for a
+  service account is a session.
+- **Any session that the application writes passes**, whatever is in it. An application that
+  logs users in from somewhere other than the ASF OAuth provider cannot take `committer` to
+  mean a committer.
+
+Where one of these matters, add a requirement of your own. A requirement is a class method of
+a subclass of `Requirements` that takes the session and returns whether it passes, with the
+message for when it does not:
+
+```python
+import asfquart
+import asfquart.auth
+
+
+class MyRequirements(asfquart.auth.Requirements):
+    E_NOT_A_PERSON = "This endpoint is not open to role accounts."
+    E_NOT_IN_A_PROJECT = "This endpoint is only accessible to committers of a project."
+
+    @classmethod
+    def person(cls, client_session):
+        """A user who logged in, and not a role account with a token"""
+        return client_session.is_role is not True, cls.E_NOT_A_PERSON
+
+    @classmethod
+    def project_committer(cls, client_session):
+        """A member of at least one project group"""
+        return bool(client_session.projects), cls.E_NOT_IN_A_PROJECT
+
+
+@asfquart.APP.route("/people-only")
+@asfquart.auth.require(MyRequirements.person)
+async def people_only():
+    return "No role accounts here"
+
+
+@asfquart.APP.route("/project-committers")
+@asfquart.auth.require({MyRequirements.person, MyRequirements.project_committer})
+async def project_committers():
+    return "Committers of a project"
+```
+
+## Examples
 
 The example below shows how to cordon off specific end-points to certain groups of users:
 
