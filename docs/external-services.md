@@ -115,22 +115,89 @@ When LDAP cannot be reached:
   cookie) fails with the `500` above, including those of users whose memberships are cached.
 - The error is logged on the `asfquart.ldap` logger.
 - A request waits for LDAP for at most 30 seconds (`asfquart.ldap.LDAP_TIMEOUT`), which
-  covers connecting, checking the password and looking up the memberships.
+  covers checking the password and looking up the memberships. It does not cover a
+  connection that the server leaves unanswered: see
+  [When LDAP does not answer the connection](#when-ldap-does-not-answer-the-connection).
 - asfquart does not retry. A second attempt would be a second check of the password, against
   a server that is already in difficulty. There is one server, and no fallback.
 
-When LDAP accepts connections and then does not answer:
+What an LDAP server that has stopped answering does to the application depends on where it
+stops. The two cases are very different.
 
-- A request gives up after the 30 seconds, but the connection it was waiting for cannot be
-  stopped from asfquart. It is made by `asfpy.aioldap` in a thread of its own, which is why a
-  slow LDAP server does not hold up other requests, and that thread goes on until LDAP
-  answers or the connection fails.
+### When LDAP does not answer the connection
+
+This is a server that does not reply when the connection is opened, or that accepts it and
+then says nothing while the encryption is set up. A host that is down behind a firewall
+which drops packets looks like this, and so does a server that is overloaded or suspended.
+
+- **The whole application stops, and not only the request that asked.** No other request is
+  answered, with or without HTTP Basic authentication, and nothing is logged, until the
+  attempt to connect ends. The connection is made by `asfpy.aioldap` in a thread of its own,
+  but the LDAP library that it uses (bonsai) keeps hold of the Python interpreter while it
+  connects, so no other thread runs, and the one that serves requests is among them.
+- `LDAP_TIMEOUT` cannot end the wait, because it is counted by the part of the application
+  that is stopped.
+- What ends it is the network timeout of the LDAP library, which asfquart sets to 5 seconds
+  (`asfquart.ldap.LDAP_NETWORK_TIMEOUT`). After that the request is the `500` above, and the
+  application runs again. Without it there would be no end: in a test with asfpy 0.60, the
+  application was still stopped when the test was ended after 45 seconds.
+- asfquart sets it by putting `LDAPNETWORK_TIMEOUT=5` into the environment of the process,
+  when the first LDAP check is made. The LDAP library reads that once, at its first use, and
+  there is no other way to set it that works for the connection. Three things follow:
+  - To use another value, start the application with `LDAPNETWORK_TIMEOUT` set. A value that
+    is already in the environment is left alone.
+  - Assigning to `LDAP_NETWORK_TIMEOUT` works only before the first LDAP check.
+  - Programs that the application starts afterwards inherit the variable, and those that use
+    the same LDAP library (`ldapsearch`, for instance) get the same timeout.
+- The 5 seconds are for each connection that is tried, and asfquart makes one connection at
+  a time. Between two of them the application runs, and answers the requests that have
+  collected. In a test, ten requests with HTTP Basic authentication that arrived together
+  stopped the application six times for 5 seconds: six of them got the `500` one after
+  another, and the other four when their 30 seconds were over, without a connection being
+  tried for them. For as long as the server stays silent and such requests keep arriving,
+  the application is stopped for most of the time.
+- An application that does not accept HTTP Basic authentication (the default) never connects
+  to LDAP, and none of this can happen to it.
+
+### One connection at a time
+
+asfquart connects to LDAP for one request at a time. The connection includes the check of
+the password. The lookup of the memberships that follows is not held back, and those go on
+side by side.
+
+- With asfpy 0.60 and earlier this is needed for the network timeout to work at all. asfpy
+  switches a setting of the LDAP library, for the whole process, around every connection.
+  Connections that are made at the same time undo it for each other, and the timeout is
+  then lost: in a test, the third of three requests that arrived together stopped the
+  application, and it was still stopped when the test was ended.
+- With a server that answers, it costs little: in a test, ten requests that arrived
+  together were all answered in 0.2 seconds.
+- A request that waits for its turn is waiting for LDAP, and its 30 seconds are counted. If
+  they run out first, it gets the `500`, and no connection is made for it.
+
+### When LDAP connects and then does not answer
+
+This is a server that sets up the connection, and then does not reply to the password or
+to the lookup of the memberships.
+
+- Requests that do not use HTTP Basic authentication are not held up. This wait is in a
+  thread of `asfpy.aioldap`, and the interpreter is free while it lasts.
+- The request gives up after the 30 seconds, but the work it was waiting for cannot be
+  stopped from asfquart. It goes on in its thread, holding its connection. With asfpy 0.60
+  and earlier that is until LDAP answers or the connection fails. With the fix for
+  [infrastructure-asfpy#72](https://github.com/apache/infrastructure-asfpy/issues/72),
+  asfpy gives up after 30 seconds of its own, and the thread and the connection are
+  released.
+- If it is the password that gets no reply, that connection keeps its turn for as long, and
+  the other requests with HTTP Basic authentication wait behind it and give up after their
+  30 seconds.
 - So that these do not pile up, at most 10 LDAP checks go on at one time
-  (`asfquart.ldap.MAX_LDAP_OPERATIONS`), and one that a request has given up on still counts
-  until it really ends. While there are 10, a request with `Authorization: Basic` is refused
-  at once with the `500`, and LDAP is not asked. The log says so, at most once a minute.
-- That is the most that an LDAP server which has stopped answering can hold: 10 threads and
-  10 connections. If it never answers and the connections never fail, HTTP Basic
+  (`asfquart.ldap.MAX_LDAP_OPERATIONS`). One that a request has given up on still counts
+  until it really ends, and so does one that waits for its turn. While there are 10, a
+  request with `Authorization: Basic` is refused at once with the `500`, and LDAP is not
+  asked. The log says so, at most once a minute.
+- That is the most that such a server can hold: 10 threads and 10 connections. With asfpy
+  0.60 and earlier, if it never answers and the connections never fail, HTTP Basic
   authentication stays unavailable until the application is restarted.
 - OAuth logins, sessions, and bearer tokens are not affected: they do not use LDAP.
 
