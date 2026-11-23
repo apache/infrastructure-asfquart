@@ -6,7 +6,18 @@ Changes in 0.1.13:
  `basic_auth=True` to `asfquart.construct()` and have the LDAP libraries installed
  (`asfquart[aioldap]`). See "HTTP Basic authentication" in `docs/sessions.md`.
 
+ **Everybody is logged out once by this upgrade.** The session cookie is now called
+ `__Host-session`, and a cookie under the old name, `session`, is no longer read. An app that
+ sets `SESSION_COOKIE_DOMAIN` or `SESSION_COOKIE_PATH` must stop, or set a `SESSION_COOKIE_NAME`
+ of its own: a browser refuses a `__Host-` cookie that has either. See "Cookie names" in
+ `docs/sessions.md`.
+
  Sessions
+ - The session cookie and the cookie that ties a login to its browser have names with the
+   `__Host-` prefix: `__Host-session` and `__Host-asfquart-oauth-state`. A browser accepts such a
+   cookie only from the host itself, over HTTPS, so a page on another host of the same site can
+   no longer give a visitor's browser a session or a login of its own. The login cookie now has
+   `Path=/`, which the prefix requires, where it had the path of the OAuth endpoint.
  - Server-side sessions: set `app.sessions` to an async store (with `create`, `validate` and
    `destroy` methods, and optionally `replace` or `register`) and the cookie then carries only a
    session id. Use the new `session.awrite()`, `session.aclear()` and `session.areplace()` with such

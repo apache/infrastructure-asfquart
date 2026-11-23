@@ -55,7 +55,7 @@ default). They are in `asfquart/generics.py`. The reasons for the callback rules
 | The target of `?login=` | Not the OAuth endpoint itself: see below | `400`, "Invalid redirect URI." |
 | A callback | Has a `code` and a `state`, neither of them empty | Not treated as a callback: the session is shown, or a `404` |
 | The `state` of a callback | A login that this application started, that has not been completed, and that has not expired (`workflow_timeout`, 900 seconds by default) | `403`, "Invalid or expired OAuth state provided." |
-| The browser of a callback | Sends the `asfquart-oauth-state` cookie that was set when this login started | `403`, the same message |
+| The browser of a callback | Sends the `__Host-asfquart-oauth-state` cookie that was set when this login started | `403`, the same message |
 | The `code` of a callback | Not checked by asfquart: it is passed to the OAuth provider, which accepts it or not | `403`, "OAuth authentication failed." |
 
 A `state` can be used once. It is given up when it is looked at, so a callback that fails
@@ -273,7 +273,7 @@ compares this table, and the tables of examples above, with the code.
 | `asfquart.ldap.VALID_UID_RE` | `[a-z][a-z0-9_-]{1,}` |
 | `asfquart.generics.MAX_REDIRECT_URI_LENGTH` | `2048` |
 | `asfquart.generics._CALLBACK_HOST_RE` | `https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?` |
-| `asfquart.generics.STATE_COOKIE_NAME` | `asfquart-oauth-state` |
+| `asfquart.generics.STATE_COOKIE_NAME` | `__Host-asfquart-oauth-state` |
 | `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` | `10000` |
 | `asfquart.utils.DEFAULT_MAX_FORM_CONTENT_LENGTH` | `102400` |
 | `asfquart.utils.FORM_CONTENT_TYPES` | `multipart/form-data, application/x-www-form-urlencoded, application/x-url-encoded` |

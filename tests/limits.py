@@ -161,13 +161,15 @@ async def test_state_cookie_lasts_as_long_as_the_login_may_take(workflow_timeout
     app = asfquart.construct(f"test_limits_{next(_counter)}", token_file=None, oauth=False)
     asfquart.generics.setup_oauth(app, workflow_timeout=workflow_timeout)
     resp = await app.test_client().get("/auth?login", scheme="https")
-    (cookie,) = [value for value in resp.headers.getlist("Set-Cookie") if value.startswith("asfquart-oauth-state=")]
+    (cookie,) = [
+        value for value in resp.headers.getlist("Set-Cookie") if value.startswith("__Host-asfquart-oauth-state=")
+    ]
     assert f"Max-Age={workflow_timeout};" in cookie
 
 
 async def test_session_cookie_ends_with_the_browser_and_has_its_flags():
     resp = await _app().test_client().get("/test-login", scheme="https")
-    (cookie,) = [value for value in resp.headers.getlist("Set-Cookie") if value.startswith("session=")]
+    (cookie,) = [value for value in resp.headers.getlist("Set-Cookie") if value.startswith("__Host-session=")]
     assert "Max-Age" not in cookie and "Expires" not in cookie
     assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
 

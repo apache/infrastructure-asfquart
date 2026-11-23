@@ -87,6 +87,65 @@ more than an hour, and two authentication factors. asfquart does not claim AAL2.
 timeouts can be configured as above, but the second factor is a matter for the ASF's OAuth
 provider and not for asfquart.
 
+## Cookie names
+
+asfquart's two cookies have names that begin with `__Host-`:
+
+| Cookie | Name | Set where |
+|---|---|---|
+| The session | `__Host-session` | `SESSION_COOKIE_NAME` in the app's config, by `asfquart.construct()` |
+| The browser's part in a login that is under way | `__Host-asfquart-oauth-state` | `asfquart.generics.STATE_COOKIE_NAME` |
+
+The prefix is an instruction to the browser. A browser accepts a cookie whose name begins
+with `__Host-` only if the cookie is `Secure`, has `Path=/`, has no `Domain`, and came over
+HTTPS. A cookie with such a name was therefore set by this very host, and by nothing else.
+
+That matters because the other attributes of a cookie (`Secure`, `HttpOnly`, `SameSite`)
+say when it is sent and who may read it, and not who may set it. Any host can set a cookie
+for the whole site that it is part of, by giving it a `Domain`: a page on any `apache.org`
+host can give the browser a cookie that is then sent to every other `apache.org` host.
+Without the prefix, such a page could hand a visitor's browser a session cookie of its
+author's own, so that the visitor uses the application as somebody else without knowing,
+or its own cookie for a login, to complete a login in the visitor's browser. With the
+prefix, the browser does not accept such a cookie.
+
+What follows from the prefix:
+
+- **The session cookie cannot be shared between hosts.** Do not set `SESSION_COOKIE_DOMAIN`
+  or `SESSION_COOKIE_PATH`: a browser refuses a `__Host-` cookie that has a domain, or a path
+  other than `/`, and nobody would stay logged in.
+- **Upgrading from 0.1.12 logs everybody out once.** A session cookie under the old name,
+  `session`, is no longer read.
+
+### Developing without HTTPS
+
+A browser only keeps these cookies over HTTPS, as it only keeps any `Secure` cookie, and
+asfquart's session cookie has always been `Secure`. Chrome and Firefox make an exception
+for an address on the machine itself, such as `http://127.0.0.1:8000`: they keep `Secure`
+cookies there, `__Host-` ones included, so an application run with `app.runx(port=8000)`
+works in them without a certificate. Safari makes no such exception, and drops the session
+cookie over plain HTTP whatever it is called. (Tried with Chrome 158, Firefox 152 and
+Safari 26.5.)
+
+Where a browser will not keep the cookies, the better way is to develop over HTTPS, with a
+certificate for the machine (`mkcert` makes one) passed to `runx()` as `certfile` and
+`keyfile`. Logging in through the ASF OAuth provider needs HTTPS in any case, as the provider
+only sends the browser back to an `https` address.
+
+To go without the prefix all the same, on a development machine and never in production,
+take it off both cookies, and the `Secure` attribute with it:
+
+```python
+import asfquart
+import asfquart.generics
+
+asfquart.generics.STATE_COOKIE_NAME = "asfquart-oauth-state"
+asfquart.generics.STATE_COOKIE_SECURE = False
+app = asfquart.construct("myapp")
+app.config["SESSION_COOKIE_NAME"] = "session"
+app.config["SESSION_COOKIE_SECURE"] = False
+```
+
 ## HTTP Basic authentication
 
 asfquart can accept an `Authorization: Basic` header with a user's ASF id and password, and

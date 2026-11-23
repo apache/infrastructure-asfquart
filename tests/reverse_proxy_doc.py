@@ -42,7 +42,7 @@ async def test_asfquart_sends_no_hsts_header_and_a_secure_strict_cookie():
     client = app.test_client()
     resp = await client.get("/test-login", scheme="https")
     assert "Strict-Transport-Security" not in resp.headers
-    (cookie,) = [value for value in resp.headers.getlist("Set-Cookie") if value.startswith("session=")]
+    (cookie,) = [value for value in resp.headers.getlist("Set-Cookie") if value.startswith("__Host-session=")]
     assert "Secure" in cookie and "SameSite=Strict" in cookie
     for path in ("/auth?login", "/auth", "/nowhere"):
         assert "Strict-Transport-Security" not in (await client.get(path, scheme="https")).headers
