@@ -19,6 +19,7 @@ These are in `asfquart/generics.py`, and are explained in [Setting up OAuth](oau
 | Logins that are started and not yet completed | 10,000 | The oldest is dropped to make room, and fails with a `403` if its user completes it. A warning is logged, at most once a minute | `max_pending_logins` argument of `setup_oauth()`, or `generics.DEFAULT_MAX_PENDING_LOGINS` |
 | Uses of a `state` | One | A second callback with the same `state` is a `403` | Not adjustable |
 | Length of a redirect target (`?login=`, `?logout=`) | 2,048 characters | `400` | `generics.MAX_REDIRECT_URI_LENGTH` |
+| Length of the scheme and host of the callback address, when they come from the `Host` header of the request that starts a login | 268 characters: `https://`, a host name of 253, a port and a `/` | `400`, and no login is started | `generics.MAX_CALLBACK_HOST_LENGTH`. Does not apply when `callback_host` is set |
 | Exchange with the OAuth provider: connecting | 10 seconds | The login fails with a `403`, and the reason is logged | `generics.OAUTH_TIMEOUT` |
 | Exchange with the OAuth provider: between reads | 15 seconds | The same | `generics.OAUTH_TIMEOUT` |
 | Exchange with the OAuth provider: in all | 30 seconds | The same | `generics.OAUTH_TIMEOUT` |
@@ -141,6 +142,7 @@ this table with the code.
 |---|---|
 | `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` | `10000` |
 | `asfquart.generics.MAX_REDIRECT_URI_LENGTH` | `2048` |
+| `asfquart.generics.MAX_CALLBACK_HOST_LENGTH` | `268` |
 | `asfquart.generics.OAUTH_TIMEOUT.connect` | `10` |
 | `asfquart.generics.OAUTH_TIMEOUT.sock_connect` | `10` |
 | `asfquart.generics.OAUTH_TIMEOUT.sock_read` | `15` |

@@ -78,7 +78,11 @@ Changes in 0.1.13:
    that the provider issued for a login at another app, or for another login at this one, is
    refused with a 403. The provider does not tie a code to the app that presents it, so such a
    code would otherwise have logged its holder in as somebody else. A response without
-   `origin_uri` is accepted, with a warning logged once.
+   `origin_uri` is accepted, with a warning logged once. **Set `callback_host`** (or
+   `generics.OAUTH_CALLBACK_HOST`): without it the callback address comes from the `Host` header
+   of the request, which a client chooses, and the check can be got round unless the proxy
+   refuses such requests. A warning is logged once when a login is started without it. A login
+   started with a `Host` header too long for a callback address is now a 400.
  - The exchange with the OAuth provider has a connect timeout (10s) and a total timeout (30s) next to
    the read timeout (`generics.OAUTH_TIMEOUT`). A provider that cannot be reached or is too slow is a
    403 rather than a 500 (#130).

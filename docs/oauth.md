@@ -110,9 +110,23 @@ So asfquart checks which login the response belongs to. The provider's response 
 `origin_uri`: the address that it was asked to send the browser back to when the login
 started. For a login that this application started, that is this application's callback
 address with the `state` of this very login in it, and asfquart remembers the address it
-sent. The response is accepted only if its `origin_uri` has the same scheme, host and path,
-and the same `state`. A code from a login at another application has that application's
-address, and a code from another login here has another `state`, so both are refused.
+sent. The response is accepted only if its `origin_uri` has the same scheme, host, port and
+path, and the same `state`. A code from a login at another application has that
+application's address, and a code from another login here has another `state`, so both are
+refused. A port that is not written is the port of the scheme, so `https://myapp.apache.org`
+and `https://myapp.apache.org:443` are the same address.
+
+**This check is only as good as the callback address, so set `callback_host`.** Without it,
+the address is built from the `Host` header of the request that starts the login, and a
+client can send any `Host` header. Somebody who holds a code from a login at another
+application can start a login here with that application's name as the header: the address
+that asfquart remembers is then the other application's, and the code matches it. With
+`callback_host` set, the address is this application's whatever the request says, and the
+code is refused. Without it, the check holds only if the proxy in front of the application
+refuses requests whose `Host` is not its own (a name-based virtual host that is not the
+default one does). asfquart logs a warning, once, at the first login that is started without
+a pinned host: `No callback_host is set, so the OAuth callback address is built from the Host
+header of each request. ...`
 
 A response with no `origin_uri` at all is accepted, since not every provider sends one, and
 a warning is logged once to say that this check could not be made:
@@ -150,6 +164,8 @@ Any response to a URL on the OAuth endpoint with a `code` in it is sent with
   so it relies on the proxy in front of the app passing that header through unchanged
   (`ProxyPreserveHost On` for httpd). The ASF provider only accepts pre-approved callback
   URLs, which limits what a forged header can do, but setting this removes the dependency.
+  The check that the provider's response is for a login this application started needs it as
+  well: see [The response must be for this login](#the-response-must-be-for-this-login), and the warning that is logged without it.
 
   Its default is `asfquart.generics.OAUTH_CALLBACK_HOST`, so an app that uses
   `asfquart.construct()` can set that instead:
@@ -492,9 +508,13 @@ Pending logins that are never completed do not accumulate:
   to make room. If the user it belonged to then completes it, they get the `403` above and
   have to start again. In normal use the limit is never reached; it is there for a client
   that starts logins without end.
-- The memory that 10,000 pending logins take depends on their redirect targets, which is why
-  those have a maximum length: roughly 5 MB when the targets are short, as they usually are,
-  and roughly 25 MB if every one is as long as it may be.
+- The memory that 10,000 pending logins take depends on their redirect targets and on the
+  callback address that is kept with each, which is why both have a maximum length: roughly
+  5 MB when they are short, as they usually are, and roughly 28 MB if every one is as long
+  as it may be. A login that is started with a `Host` header too long for the callback
+  address (more than 268 characters with `https://` in front,
+  `asfquart.generics.MAX_CALLBACK_HOST_LENGTH`) is a `400`, and nothing is kept for it. That
+  applies only when `callback_host` is not set.
 - A warning is logged when logins are dropped for want of room, at most once a minute:
   `More than 10000 OAuth logins are pending; 37 dropped since the last warning, oldest first.`
   The number is how many were dropped since the warning before. One warning with a small
