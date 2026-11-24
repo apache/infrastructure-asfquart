@@ -42,18 +42,6 @@ import yaml
 
 from . import utils
 
-try:
-    ExceptionGroup  # pyright: ignore[reportUnboundVariable, reportUnusedExpression] - tests for the builtin
-except NameError:
-    # This version does not have an ExceptionGroup (introduced in
-    # Python 3.11). Somebody (hypercorn) might be using a backport
-    # of it from the "exceptiongroup" package. We'll catch that
-    # instead. Note that packages designed for less than 3.11
-    # won't be throwing ExceptionGroup (of any form) at all, which
-    # means our catching it will be a no-op.
-    if sys.version_info < (3, 11):
-        from exceptiongroup import ExceptionGroup  # pyright: ignore[reportMissingImports] - Python 3.10 only
-
 LOGGER = logging.getLogger(__name__)
 
 _P = typing.ParamSpec("_P")
@@ -364,7 +352,7 @@ class QuartApp(quart.Quart):
         except quart.utils.MustReloadError:
             reload_ = True
             LOGGER.debug("FOUND: MustReloadError")
-        except ExceptionGroup as e:  # pyright: ignore[reportPossiblyUnboundVariable] - the builtin or the backport
+        except ExceptionGroup as e:
             reload_ = e.subgroup(quart.utils.MustReloadError) is not None
             LOGGER.debug(f"FOUND: ExceptionGroup, reload_={reload_}")
         finally:

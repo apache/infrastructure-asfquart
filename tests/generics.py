@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for generics.py — redirect URI validation (CWE-601, CWE-79)"""
 
-import asyncio
 import itertools
 import ssl
 import urllib.parse
@@ -461,7 +460,7 @@ async def test_callback_exchange_is_time_limited(monkeypatch):
 @pytest.mark.parametrize(
     "error",
     [
-        asyncio.TimeoutError(),
+        TimeoutError(),
         aiohttp.ClientConnectionError("https://oauth.apache.org/token-oidc?code=sekrit"),
         OSError("could not load the CA store, while exchanging sekrit"),  # not wrapped by aiohttp
         ssl.SSLError("handshake failed for code=sekrit"),

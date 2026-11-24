@@ -1,14 +1,13 @@
 [project]
 name = "asfquart"
 version = "0.2.0.dev0+dev"
-requires-python = ">=3.10,<4"
+requires-python = ">=3.11,<4"
 authors = [{ name = "ASF Infrastructure", email = "users@infra.apache.org" }]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -27,7 +26,6 @@ dependencies = [
     "ezt>=1.1,<2",
     "asfpy>=0.56,<1",
     "easydict>=1.13,<2",
-    "exceptiongroup>=1.1.0; python_version<'3.11'",
     "watchfiles>=1.0.0,<2",
 ]
 
@@ -55,7 +53,6 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 120
-per-file-target-version = { "scripts/*" = "py311" }
 
 # The same rule set as tooling-trusted-releases
 [tool.ruff.lint]
@@ -94,7 +91,7 @@ ignore = [
 # Tests and examples are not type-checked
 [tool.pyright]
 include = ["src/asfquart"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
