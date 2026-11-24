@@ -188,6 +188,14 @@ re-run it.
 Straight afterwards, before anything else is merged, run `sh scripts/phase.sh develop` to change
 the version to `0.2.(N+1).dev0+dev`, commit, and push.
 
+If a release does not go through, because the checks fail on the tag or it is not approved, its
+number is spent: a `v` tag can be neither deleted nor moved. Run `sh scripts/phase.sh develop`
+as usual, fix what was wrong, and release the next number.
+
+If something was merged after `release` and before `develop`, `develop` refuses, as the latest
+commit on `main` is then not the tagged one. Set the version by hand with
+`uv version --no-config --no-sync 0.2.(N+1).dev0+dev`, commit, and push.
+
 To start a new series, such as 0.3, change `series` in `scripts/phase.sh` and `_SERIES` in
 `scripts/check_version.py`, and run `uv version --no-config --no-sync 0.3.0.dev0+dev`, all in
 one commit.
