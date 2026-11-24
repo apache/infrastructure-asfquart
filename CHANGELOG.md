@@ -8,9 +8,11 @@ Changes in 0.1.13:
 
  **Everybody is logged out once by this upgrade.** The session cookie is now called
  `__Host-session`, and a cookie under the old name, `session`, is no longer read. An app that
- sets `SESSION_COOKIE_DOMAIN` or `SESSION_COOKIE_PATH` must stop, or set a `SESSION_COOKIE_NAME`
- of its own: a browser refuses a `__Host-` cookie that has either. See "Cookie names" in
- `docs/sessions.md`.
+ sets `SESSION_COOKIE_DOMAIN` or `SESSION_COOKIE_PATH`, or is served from a path
+ (`APPLICATION_ROOT`), or turns `SESSION_COOKIE_SECURE` off, must stop, or set a
+ `SESSION_COOKIE_NAME` of its own: a browser refuses a `__Host-` cookie with any of those, and
+ **such an app now fails to start**, with an error that names the setting. See "Cookie names"
+ in `docs/sessions.md`.
 
  Sessions
  - The session cookie and the cookie that ties a login to its browser have names with the

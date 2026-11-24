@@ -375,6 +375,17 @@ def setup_oauth(  # noqa: C901
         _check_callback_host(host)  # fail at startup rather than at the first login
 
     pending_states: dict[str, list[typing.Any]] = {}  # keeps track of pending states and their expiry
+
+    @app.before_serving
+    async def check_state_cookie() -> None:
+        # The same check as construct() makes of the session cookie, of the cookie for a login
+        # that is under way. Its path is always "/", and it never has a domain.
+        problems = asfquart.base.cookie_prefix_problems(
+            "The cookie for a login (generics.STATE_COOKIE_NAME)", STATE_COOKIE_NAME, STATE_COOKIE_SECURE, "/", None
+        )
+        if problems:
+            raise RuntimeError("; ".join(problems) + ". " + asfquart.base.COOKIE_PREFIX_ADVICE)
+
     if max_pending_logins is None:
         max_pending_logins = DEFAULT_MAX_PENDING_LOGINS
     if max_pending_logins < 1:

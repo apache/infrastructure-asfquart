@@ -5,6 +5,7 @@ import itertools
 import urllib.parse
 
 import pytest
+import quart.testing.app
 
 import asfquart
 import asfquart.generics
@@ -159,3 +160,97 @@ def test_the_way_out_in_the_documentation_names_the_real_settings():
     ):
         assert line in example
     assert hasattr(asfquart.generics, "STATE_COOKIE_NAME") and hasattr(asfquart.generics, "STATE_COOKIE_SECURE")
+
+
+# ---- An app whose cookies a browser would refuse does not start ----
+
+
+async def _starts(app):
+    async with app.test_app():
+        return True
+
+
+async def test_app_with_the_cookies_as_asfquart_sets_them_starts():
+    assert await _starts(_make_app())
+    assert await _starts(asfquart.construct(f"test_cookie_names_{next(_counter)}", token_file=None, oauth=False))
+
+
+SETTINGS_A_BROWSER_REFUSES = {
+    "served from a path": ({"APPLICATION_ROOT": "/myapp"}, "has the path '/myapp', not '/'"),
+    "a path for the cookie": ({"SESSION_COOKIE_PATH": "/myapp"}, "has the path '/myapp', not '/'"),
+    "a domain": ({"SESSION_COOKIE_DOMAIN": "apache.org"}, "has the domain 'apache.org'"),
+    "not Secure": ({"SESSION_COOKIE_SECURE": False}, "is not Secure"),
+    "prefix in other letters": (
+        {"SESSION_COOKIE_NAME": "__host-session", "SESSION_COOKIE_SECURE": False},
+        "is named '__host-session' and is not Secure",
+    ),
+    "__Secure- and not Secure": (
+        {"SESSION_COOKIE_NAME": "__Secure-session", "SESSION_COOKIE_SECURE": False},
+        "is named '__Secure-session' and is not Secure",
+    ),
+}
+
+
+@pytest.mark.parametrize("which", list(SETTINGS_A_BROWSER_REFUSES))
+async def test_app_whose_session_cookie_a_browser_would_refuse_does_not_start(which):
+    """A browser drops a __Host- cookie that is not Secure, or has a domain, or a path other than
+    "/", and says nothing. Nobody could log in, so the app says why and does not start."""
+    settings, problem = SETTINGS_A_BROWSER_REFUSES[which]
+    app = _make_app()
+    app.config.update(settings)  # after construct(), as an app would
+    with pytest.raises(quart.testing.app.LifespanError) as excinfo:
+        await _starts(app)
+    message = str(excinfo.value)
+    assert "The session cookie (SESSION_COOKIE_NAME) is named " in message
+    assert problem in message
+    assert 'See "Cookie names" in docs/sessions.md.' in message
+
+
+async def test_every_problem_with_the_session_cookie_is_named_at_once():
+    app = _make_app()
+    app.config.update(APPLICATION_ROOT="/myapp", SESSION_COOKIE_DOMAIN="apache.org", SESSION_COOKIE_SECURE=False)
+    with pytest.raises(quart.testing.app.LifespanError) as excinfo:
+        await _starts(app)
+    for problem in ("is not Secure", "has the path '/myapp'", "has the domain 'apache.org'"):
+        assert problem in str(excinfo.value)
+
+
+SETTINGS_WITHOUT_THE_PREFIX = {
+    "served from a path": {"APPLICATION_ROOT": "/myapp"},
+    "a domain": {"SESSION_COOKIE_DOMAIN": "apache.org"},
+    "not Secure": {"SESSION_COOKIE_SECURE": False},
+    "a path, with __Secure-": {"SESSION_COOKIE_NAME": "__Secure-session", "APPLICATION_ROOT": "/myapp"},
+}
+
+
+@pytest.mark.parametrize("which", list(SETTINGS_WITHOUT_THE_PREFIX))
+async def test_app_without_the_prefix_may_have_those_settings(which):
+    """The rules are the prefix's: under another name the same settings are the app's business"""
+    app = _make_app()
+    app.config.update({"SESSION_COOKIE_NAME": "session", **SETTINGS_WITHOUT_THE_PREFIX[which]})
+    assert await _starts(app)
+
+
+async def test_app_whose_login_cookie_a_browser_would_refuse_does_not_start(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "STATE_COOKIE_SECURE", False)
+    app = _make_app()
+    with pytest.raises(quart.testing.app.LifespanError) as excinfo:
+        await _starts(app)
+    assert (
+        "The cookie for a login (generics.STATE_COOKIE_NAME) is named '__Host-asfquart-oauth-state' and is not Secure."
+    ) in str(excinfo.value)
+
+
+async def test_login_cookie_is_not_checked_in_an_app_without_oauth(monkeypatch):
+    monkeypatch.setattr(asfquart.generics, "STATE_COOKIE_SECURE", False)
+    assert await _starts(asfquart.construct(f"test_cookie_names_{next(_counter)}", token_file=None, oauth=False))
+
+
+async def test_the_way_out_for_development_starts(monkeypatch):
+    """The settings that docs/sessions.md gives for plain HTTP pass the check"""
+    monkeypatch.setattr(asfquart.generics, "STATE_COOKIE_NAME", "asfquart-oauth-state")
+    monkeypatch.setattr(asfquart.generics, "STATE_COOKIE_SECURE", False)
+    app = _make_app()
+    app.config["SESSION_COOKIE_NAME"] = "session"
+    app.config["SESSION_COOKIE_SECURE"] = False
+    assert await _starts(app)
