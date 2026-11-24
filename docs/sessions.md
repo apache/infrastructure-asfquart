@@ -114,6 +114,25 @@ What follows from the prefix:
 - **The session cookie cannot be shared between hosts.** Do not set `SESSION_COOKIE_DOMAIN`
   or `SESSION_COOKIE_PATH`: a browser refuses a `__Host-` cookie that has a domain, or a path
   other than `/`, and nobody would stay logged in.
+- **The session cookie is for the whole host, and not for a path on it.** An application that
+  is served from a path (`APPLICATION_ROOT`, `/myapp` say) cannot keep its cookie to that
+  path under this name. Applications that share a host by path therefore share the cookie's
+  name too, and each would overwrite the other's session: give each a host of its own, or
+  give the cookie a name without the prefix, as [below](#developing-without-https) but
+  keeping `Secure`.
+- **An application whose cookies a browser would refuse does not start.** A browser drops
+  such a cookie and says nothing, so nobody could log in and nothing would show why. When the
+  application begins to serve, asfquart checks the settings it has ended up with, and raises
+  a `RuntimeError` that names what is wrong:
+
+  | The name begins with | Refused if |
+  |---|---|
+  | `__Host-` | `SESSION_COOKIE_SECURE` is off, or `SESSION_COOKIE_DOMAIN` is set, or the path (`SESSION_COOKIE_PATH`, or else `APPLICATION_ROOT`) is not `/` |
+  | `__Secure-` | `SESSION_COOKIE_SECURE` is off |
+  | anything else | never |
+
+  The cookie for a login is checked in the same way, for `STATE_COOKIE_SECURE`, in an
+  application that has the OAuth endpoint.
 - **Upgrading from 0.1.12 logs everybody out once.** A session cookie under the old name,
   `session`, is no longer read.
 

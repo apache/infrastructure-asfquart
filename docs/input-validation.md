@@ -232,6 +232,7 @@ exception there, so that a mistake does not wait for a request to show itself.
 | `callback_host` of `setup_oauth()`, or `generics.OAUTH_CALLBACK_HOST` | `https://`, a host name, optionally a port, optionally a final `/`, and nothing else | `ValueError` | `generics.py` |
 | `max_pending_logins` of `setup_oauth()` | At least 1 | `ValueError` | `generics.py` |
 | `basic_auth=True` of `construct()` | The LDAP libraries are installed | `RuntimeError` | `base.py` |
+| The settings of a cookie whose name begins with `__Host-` or `__Secure-`, checked when the application begins to serve | What the prefix requires of a browser: `Secure`, and for `__Host-` the path `/` and no domain | `RuntimeError`, and the application does not start | `base.py`, `generics.py` |
 | Arguments of `@asfquart.auth.require` | Each is a method of `asfquart.auth.Requirements` or of a subclass of it | `TypeError` | `auth.py` |
 | A bare `@asfquart.auth.require` | Decorates an `async` function | `TypeError` | `auth.py` |
 | `port` of `runx()` | Given | `ValueError` | `base.py` |

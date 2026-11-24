@@ -434,6 +434,45 @@ class QuartApp(quart.Quart):
             ctask.cancel()
 
 
+def cookie_prefix_problems(what: str, name: str, secure: object, path: str | None, domain: object) -> list[str]:
+    """What a browser would refuse a cookie of this name for. A name that begins with __Host-
+    needs Secure, Path=/ and no Domain, and one that begins with __Secure- needs Secure. A browser
+    drops a cookie that does not keep to its prefix, and says nothing: nobody would stay logged
+    in, and nothing would show why. Browsers compare the prefix without regard to case."""
+    prefix = next((p for p in ("__Host-", "__Secure-") if name.lower().startswith(p.lower())), None)
+    if prefix is None:
+        return []
+    problems = []
+    if not secure:
+        problems.append(f"{what} is named {name!r} and is not Secure")
+    if prefix == "__Host-" and path != "/":
+        problems.append(f"{what} is named {name!r} and has the path {path!r}, not '/'")
+    if prefix == "__Host-" and domain:
+        problems.append(f"{what} is named {name!r} and has the domain {domain!r}")
+    return problems
+
+
+COOKIE_PREFIX_ADVICE = (
+    "A browser refuses a cookie whose name begins with __Host- unless it is Secure, has the path"
+    " '/' and has no domain, so nobody could log in. Either leave those settings alone, or give the"
+    ' cookie a name without the prefix. See "Cookie names" in docs/sessions.md.'
+)
+
+
+def _check_session_cookie(app: "QuartApp") -> None:
+    """Raises a RuntimeError if a browser would refuse the session cookie as the app now has it"""
+    problems = cookie_prefix_problems(
+        "The session cookie (SESSION_COOKIE_NAME)",
+        str(app.config["SESSION_COOKIE_NAME"]),
+        app.config["SESSION_COOKIE_SECURE"],
+        # As quart works it out: SESSION_COOKIE_PATH, or else APPLICATION_ROOT
+        app.config["SESSION_COOKIE_PATH"] or app.config["APPLICATION_ROOT"],
+        app.config["SESSION_COOKIE_DOMAIN"],
+    )
+    if problems:
+        raise RuntimeError("; ".join(problems) + ". " + COOKIE_PREFIX_ADVICE)
+
+
 def construct(
     name: str,
     /,
@@ -510,6 +549,12 @@ def construct(
     app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+
+    @app.before_serving
+    async def check_session_cookie() -> None:
+        # When the app starts to serve, and not here, so that it is the settings the app ends up
+        # with that are checked. An app that cannot keep anybody logged in does not start.
+        _check_session_cookie(app)
 
     app.url_map.converters["filename"] = asfquart.utils.FilenameConverter
 
