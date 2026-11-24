@@ -116,7 +116,7 @@ provider, and creates a session from the answer only if the answer identifies a 
 | The status | `200`. A redirect is not followed |
 | The body | JSON, and a JSON object |
 | `uid` | Present, a string, and in the form of an ASF user id |
-| `origin_uri`, if present | A string, and the callback address of this login: the same scheme, host and path, and the same `state` |
+| `origin_uri`, if present | A string, and the callback address of this login: the same scheme, host, port and path, and the same `state`. No user name in it |
 
 If any of these is not met the login fails with a `403`, "OAuth authentication failed.", no
 session is created, and a warning in the log says which rule it was. The warning does not
@@ -278,6 +278,7 @@ compares this table, and the tables of examples above, with the code.
 | `asfquart.generics.OAUTH_UID_RE` | `[a-z][a-z0-9_-]{1,}` |
 | `asfquart.ldap.VALID_UID_RE` | `[a-z][a-z0-9_-]{1,}` |
 | `asfquart.generics.MAX_REDIRECT_URI_LENGTH` | `2048` |
+| `asfquart.generics.MAX_CALLBACK_HOST_LENGTH` | `268` |
 | `asfquart.generics._CALLBACK_HOST_RE` | `https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?` |
 | `asfquart.generics.STATE_COOKIE_NAME` | `asfquart-oauth-state` |
 | `asfquart.generics.DEFAULT_MAX_PENDING_LOGINS` | `10000` |
@@ -303,9 +304,10 @@ to check:
   other than the `filename` converter above.
 - **Request headers**, other than `Authorization` and, on the OAuth endpoint, the
   `Sec-Fetch-*` and prefetch headers in the table above. In particular asfquart does not
-  validate `Host`: unless `callback_host` is set, the OAuth callback address is built from
-  it, so the proxy in front of the application has to pass it through unchanged. See
-  [Setting up OAuth](oauth.md).
+  validate `Host`, beyond its length when a login starts: unless `callback_host` is set, the
+  OAuth callback address is built from it, so the proxy in front of the application has to
+  pass it through unchanged, and has to refuse the ones that are not the application's own.
+  See [Setting up OAuth](oauth.md).
 - **Uploaded files.**
 - **The fields of a session other than `uid`.** What the OAuth provider says about a user
   is stored as received, and what the application passes to `session.write()` is stored as

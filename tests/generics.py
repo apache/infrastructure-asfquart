@@ -1514,6 +1514,7 @@ async def test_response_for_this_login_is_accepted(monkeypatch, origin_warning, 
     "rewrite",
     [
         lambda callback: callback.replace("https://localhost", "HTTPS://LOCALHOST"),
+        lambda callback: callback.replace("https://localhost", "https://localhost:443"),
         lambda callback: callback.replace("?state=", "?extra=1&state="),
         lambda callback: callback + "&code=xyz",
         lambda callback: callback + "#fragment",
@@ -1531,6 +1532,9 @@ async def test_same_address_written_another_way_is_accepted(monkeypatch, origin_
 OTHER_LOGINS = {
     "another app": lambda callback: callback.replace("https://localhost", "https://other.apache.org"),
     "another app, on a port": lambda callback: callback.replace("https://localhost", "https://localhost:8443"),
+    "the port of plain http": lambda callback: callback.replace("https://localhost", "https://localhost:80"),
+    "a port that is none": lambda callback: callback.replace("https://localhost", "https://localhost:99999"),
+    "a user name": lambda callback: callback.replace("https://localhost", "https://other.apache.org@localhost"),
     "this host as a prefix": lambda callback: callback.replace("https://localhost", "https://localhost.evil.example"),
     "another path": lambda callback: callback.replace("/auth?", "/other/auth?"),
     "plain http": lambda callback: callback.replace("https://", "http://"),
@@ -1624,3 +1628,148 @@ async def test_code_from_a_login_at_another_app_cannot_be_used_here(monkeypatch,
         assert provider.calls != []  # the provider was asked, and answered
         assert resp.status_code == 403
         assert not await _logged_in(attacker)
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize(
+    "pinned, rewrite",
+    [
+        ("https://myapp.apache.org:443", lambda callback: callback.replace(":443", "")),
+        ("https://myapp.apache.org", lambda callback: callback.replace("apache.org/", "apache.org:443/")),
+        ("https://myapp.apache.org:8443", lambda callback: callback),
+    ],
+)
+async def test_port_of_the_scheme_is_the_same_written_or_not(monkeypatch, origin_warning, pinned, rewrite):
+    """The callback address may name port 443 and the provider leave it out, or the other way round"""
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, callback_host=pinned)
+    async with app.test_app():
+        client, resp, callback = await _login_with_origin(app, monkeypatch, rewrite)
+        assert callback.startswith(pinned + "/auth?state=")
+        assert resp.status_code == 200
+        assert await _logged_in(client)
+
+
+@pytest.mark.generics
+async def test_another_port_is_another_app(monkeypatch, origin_warning):
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, callback_host="https://myapp.apache.org:8443")
+    async with app.test_app():
+        for rewrite in (
+            lambda callback: callback.replace(":8443", ""),
+            lambda callback: callback.replace(":8443", ":443"),
+        ):
+            _, resp, _ = await _login_with_origin(app, monkeypatch, rewrite)
+            assert resp.status_code == 403
+
+
+# ---- The callback address is only as good as where its host comes from ----
+
+
+@pytest.fixture
+def host_warning(monkeypatch):
+    """The warning for a callback host that is not pinned is logged once per process: start afresh"""
+    monkeypatch.setattr(asfquart.generics, "_warned_host_not_pinned", False)
+
+
+def _host_warnings(caplog):
+    return [r for r in caplog.records if r.name == "asfquart.generics" and "No callback_host is set" in r.getMessage()]
+
+
+@pytest.mark.generics
+async def test_callback_host_from_the_request_is_warned_about_once(monkeypatch, origin_warning, host_warning, caplog):
+    """Without callback_host the address comes from the Host header, which a client chooses"""
+    app = _make_app()
+    async with app.test_app():
+        assert _host_warnings(caplog) == []  # not at startup: OAUTH_CALLBACK_HOST may be set later
+        for _ in range(3):
+            await _login_with_origin(app, monkeypatch, lambda callback: callback)
+    warnings = _host_warnings(caplog)
+    assert len(warnings) == 1
+    assert warnings[0].levelname == "WARNING"
+
+
+@pytest.mark.generics
+@pytest.mark.parametrize("how", ["argument", "constant"])
+async def test_pinned_callback_host_is_not_warned_about(monkeypatch, origin_warning, host_warning, caplog, how):
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    if how == "argument":
+        asfquart.generics.setup_oauth(app, callback_host="https://myapp.apache.org")
+    else:
+        monkeypatch.setattr(asfquart.generics, "OAUTH_CALLBACK_HOST", "https://myapp.apache.org")
+        asfquart.generics.setup_oauth(app)
+    async with app.test_app():
+        _, resp, _ = await _login_with_origin(app, monkeypatch, lambda callback: callback)
+        assert resp.status_code == 200
+    assert _host_warnings(caplog) == []
+
+
+OTHER_APP = {"Host": "other.apache.org"}
+
+
+def _host_of_length(length):
+    """A host name of this many characters, in labels that are no longer than DNS allows"""
+    host = ".".join(["a" * 50] * (length // 51 + 1))[-length:]
+    return "a" + host[1:]  # in case it was cut at a dot
+
+
+@pytest.mark.generics
+async def test_login_started_with_the_host_of_another_app(monkeypatch, origin_warning, host_warning):
+    """Why the warning is there. Somebody who holds a code from a login at another app starts a
+    login here with that app's name as the Host header. Pinned, the callback address is this
+    app's all the same, and the code is refused. Not pinned, the address is taken from the header,
+    the code matches it, and only a proxy that refuses the header stands in the way."""
+    for_other_app = lambda callback: callback.replace("https://myapp.apache.org", "https://other.apache.org")  # noqa: E731
+    pinned = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(pinned, callback_host="https://myapp.apache.org")
+    async with pinned.test_app():
+        client, resp, callback = await _login_with_origin(pinned, monkeypatch, for_other_app, headers=OTHER_APP)
+        assert callback.startswith("https://myapp.apache.org/auth?state=")
+        assert resp.status_code == 403
+        assert not await _logged_in(client)
+    not_pinned = _make_app()
+    async with not_pinned.test_app():
+        client, resp, callback = await _login_with_origin(not_pinned, monkeypatch, lambda c: c, headers=OTHER_APP)
+        assert callback.startswith("https://other.apache.org/auth?state=")
+        assert resp.status_code == 200
+
+
+@pytest.mark.generics
+async def test_host_header_that_is_too_long_starts_no_login(monkeypatch, host_warning):
+    """The callback address is kept for every pending login, so a client cannot make it any length"""
+    limit = asfquart.generics.MAX_CALLBACK_HOST_LENGTH
+    assert limit == 268
+    longest = _host_of_length(limit - len("https://") - len("/"))
+    assert len(f"https://{longest}/") == limit
+    seen = []
+    plain_purge = asfquart.generics._purge_pending_states
+    monkeypatch.setattr(
+        asfquart.generics,
+        "_purge_pending_states",
+        lambda pending, *args: seen.append(pending) or plain_purge(pending, *args),
+    )
+    app = _make_app()
+    async with app.test_app():
+        client = app.test_client()
+        resp = await client.get("/auth?login", scheme="https", headers={"Host": longest})
+        assert resp.status_code == 302
+        (pending,) = {id(p): p for p in seen}.values()
+        assert len(pending) == 1
+        resp = await client.get("/auth?login=/next", scheme="https", headers={"Host": "a" + longest})
+        assert resp.status_code == 400
+        assert (await resp.get_data()).decode() == "Invalid Host header.\n"
+        assert "Set-Cookie" not in resp.headers
+        assert len(pending) == 1  # nothing was kept for it
+        resp = await client.get("/auth?login", scheme="https", headers={"Host": _host_of_length(60000)})
+        assert resp.status_code == 400
+        assert len(pending) == 1
+
+
+@pytest.mark.generics
+async def test_pinned_callback_host_does_not_look_at_the_host_header(monkeypatch, host_warning):
+    app = asfquart.construct(f"test_generics_{next(_counter)}", token_file=None, oauth=False)
+    asfquart.generics.setup_oauth(app, callback_host="https://myapp.apache.org")
+    async with app.test_app():
+        resp = await app.test_client().get("/auth?login", scheme="https", headers={"Host": _host_of_length(1000)})
+        assert resp.status_code == 302
+        assert "redirect_uri=https%3A//myapp.apache.org/auth" in resp.headers["Location"]

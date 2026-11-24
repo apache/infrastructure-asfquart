@@ -87,11 +87,31 @@ def _check_callback_host(host: object) -> None:
         raise ValueError("The OAuth callback host must be https://, a host name, and optionally a port")
 
 
-def _callback_host(pinned: str | None) -> str:
-    """Returns the scheme and host for the OAuth callback URL. pinned is setup_oauth()'s callback_host"""
+# The longest scheme and host that a callback address is built from when none is pinned and they
+# come from the request: "https://", a host name of 253 characters, a port and a "/". The address
+# is kept for every pending login, so what a client can put into it has a limit.
+MAX_CALLBACK_HOST_LENGTH = 268
+
+_warned_host_not_pinned = False  # so the warning below is logged once per process, not per login
+
+
+def _callback_host(pinned: str | None) -> str | None:
+    """Returns the scheme and host for the OAuth callback URL. pinned is setup_oauth()'s callback_host.
+    None if they have to come from the request and what the request has is too long."""
+    global _warned_host_not_pinned
     host = pinned if pinned is not None else OAUTH_CALLBACK_HOST
     if host is None:
-        return quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
+        if not _warned_host_not_pinned:
+            _warned_host_not_pinned = True
+            LOGGER.warning(
+                "No callback_host is set, so the OAuth callback address is built from the Host header"
+                " of each request. A client can send any Host header, unless the reverse proxy in"
+                " front of the application refuses the ones that are not its own. The check that the"
+                " provider's response is for a login that this application started depends on that"
+                " address. Set callback_host in setup_oauth(), or generics.OAUTH_CALLBACK_HOST."
+            )
+        from_request = quart.request.host_url.replace("http://", "https://")  # Enforce HTTPS
+        return from_request if len(from_request) <= MAX_CALLBACK_HOST_LENGTH else None
     # OAUTH_CALLBACK_HOST is read here, not at setup, so one set late still applies. A bad value
     # is an error - falling back to the Host header would quietly undo the pin.
     _check_callback_host(host)
@@ -238,6 +258,21 @@ def _oauth_data_problem(oauth_data: object) -> str | None:
     return None
 
 
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _address_parts(url: str) -> tuple[str, str, int | None, str, list[str] | None]:
+    """The parts of a callback address that say which login it is for: the scheme, the host, the
+    port (the one of the scheme, if the address names none), the path, and the state.
+    A ValueError for an address that cannot be taken apart, or that has a user name in it."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("a callback address has no user name")
+    scheme = parts.scheme.lower()
+    port = parts.port if parts.port is not None else _DEFAULT_PORTS.get(scheme)
+    return scheme, (parts.hostname or "").lower(), port, parts.path, urllib.parse.parse_qs(parts.query).get("state")
+
+
 _warned_no_origin_uri = False  # so the warning below is logged once per process, not per login
 
 
@@ -266,13 +301,10 @@ def _oauth_origin_problem(oauth_data: dict[str, typing.Any], callback_url: str) 
     if not isinstance(origin_uri, str):
         return "origin_uri is not a string"
     try:
-        origin, expected = urllib.parse.urlsplit(origin_uri), urllib.parse.urlsplit(callback_url)
         # Compared in parts, and not as two strings, so that a provider which writes the same
-        # address another way (the query string encoded differently, say) is not turned away
-        same = (
-            (origin.scheme.lower(), origin.netloc.lower(), origin.path)
-            == (expected.scheme.lower(), expected.netloc.lower(), expected.path)
-        ) and urllib.parse.parse_qs(origin.query).get("state") == urllib.parse.parse_qs(expected.query)["state"]
+        # address another way (":443" left out or put in, the query string encoded differently)
+        # is not turned away
+        same = _address_parts(origin_uri) == _address_parts(callback_url)
     except ValueError:
         same = False
     if not same:
@@ -388,13 +420,18 @@ def setup_oauth(  # noqa: C901
                 return quart.Response(
                     status=400, response="Invalid redirect URI.\n", content_type="text/plain; charset=utf-8"
                 )
+            callback_base = _callback_host(callback_host)
+            if callback_base is None:
+                return quart.Response(
+                    status=400, response="Invalid Host header.\n", content_type="text/plain; charset=utf-8"
+                )
             state = secrets.token_hex(16)
             browser = quart.request.cookies.get(STATE_COOKIE_NAME) or secrets.token_hex(16)
             # Logins that were started and never completed are not left to pile up: drop those
             # that have expired, and make room for this one if there are too many all the same
             purge_pending_states(max_pending_logins - 1)
             callback_url = urllib.parse.urljoin(  # NOTE: the uri MUST start with a single forward slash!
-                _callback_host(callback_host),
+                callback_base,
                 f"{uri}?state={state}",
             )
             # Save the time we initialized this state, the optional login redirect URI,
