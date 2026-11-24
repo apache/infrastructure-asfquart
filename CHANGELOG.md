@@ -127,16 +127,18 @@ Changes in 0.1.13:
  - A request waits for LDAP for at most 30 seconds (`ldap.LDAP_TIMEOUT`), and at most 10 LDAP
    checks go on at one time (`ldap.MAX_LDAP_OPERATIONS`), counting those that a request has
    stopped waiting for. Until now there was no limit on either, so an LDAP server that did not
-   answer held a thread and a connection for every request with HTTP Basic authentication. Past
-   either limit the request is a 500, as it is when LDAP cannot be reached. An LDAP check is not
-   retried. See "LDAP" in `docs/external-services.md`.
+   answer held a thread and a connection for every request with HTTP Basic authentication. A
+   request that finds 10 going on waits for one to end, within its 30 seconds, and at most 100
+   wait like that (`ldap.MAX_LDAP_WAITING`). When the time is up, or 100 are waiting, the
+   request is a 500, as it is when LDAP cannot be reached. An LDAP check is not retried. See
+   "LDAP" in `docs/external-services.md`.
 
  - An LDAP server that does not answer the connection itself stops the whole application, and
    not only the request that asked, for as long as the connection is attempted: the LDAP library
    holds the Python interpreter meanwhile. Until now that had no end. It now ends after 5 seconds
    (`ldap.LDAP_NETWORK_TIMEOUT`) for each LDAP check, with a 500. asfquart does this by setting
-   `LDAPNETWORK_TIMEOUT` in the environment of the process at the first LDAP check, unless it is
-   already set; programs that the application starts afterwards inherit it.
+   `LDAPNETWORK_TIMEOUT` in the environment of the process in `construct(basic_auth=True)`,
+   unless it is already set; programs that the application starts afterwards inherit it.
    Connections to LDAP are now made one at a time, which the timeout needs with asfpy 0.60 and
    earlier; the lookups that follow a connection still go on side by side.
 

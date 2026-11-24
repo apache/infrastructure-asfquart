@@ -483,6 +483,8 @@ def construct(
                 "basic_auth=True needs the LDAP libraries, which are not installed."
                 ' Install asfquart with the aioldap extra ("asfquart[aioldap]"), or leave basic_auth off.'
             )
+        # Now, before anything in the application has used the LDAP library, which reads it once
+        ldap.set_network_timeout()
 
     app = QuartApp(name, app_dir, cfg_file, token_file, *args, **kw)
     app.basic_auth = basic_auth

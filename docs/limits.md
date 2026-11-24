@@ -93,7 +93,8 @@ authentication; see [External services](external-services.md#ldap).
 | Time a request waits for LDAP to check a password and look up the memberships | 30 seconds | `500`, and the reason is logged. The work in LDAP is not stopped, and a connection that LDAP leaves unanswered is not covered; see below | `ldap.LDAP_TIMEOUT` |
 | Time the LDAP library waits for a server that does not answer the connection. The whole application is stopped for that time; see below | 5 seconds, for each LDAP check | `500`, and the reason is logged | `LDAPNETWORK_TIMEOUT` in the environment that the application is started in; `ldap.LDAP_NETWORK_TIMEOUT` before the first LDAP check |
 | Connections to LDAP being made at one time. The lookup of the memberships that follows is not counted | 1 | The others wait for their turn, within their 30 seconds | Not adjustable |
-| LDAP checks going on at one time, counting those that a request has stopped waiting for | 10 | `500` at once, without asking LDAP, and the reason is logged at most once a minute | `ldap.MAX_LDAP_OPERATIONS` |
+| LDAP checks going on at one time, counting those that a request has stopped waiting for | 10 | The request waits for one of them to end, in the order of arrival and within its 30 seconds. If none does: `500`, without asking LDAP, and the reason is logged at most once a minute | `ldap.MAX_LDAP_OPERATIONS` |
+| Requests waiting for one of those checks to end | 100 | `500` at once, without asking LDAP, and the reason is logged at most once a minute | `ldap.MAX_LDAP_WAITING` |
 | Attempts at an LDAP check | One: it is not tried again | `500` | Not adjustable |
 | How often a wrong password is logged for one user | Once in 60 seconds, with a count of the failures in between | Not a limit on logging in: it keeps a flood of guesses from flooding the log | `ldap.FAILED_LOGIN_LOG_INTERVAL` |
 | Users whose wrong passwords are being counted | 1,000 | The one that failed longest ago is dropped. The failures that were counted are logged first, and the user is logged again at their next failure | `ldap.MAX_FAILED_LOGIN_USERS` |
@@ -106,9 +107,11 @@ The limits on waiting for LDAP and on LDAP checks work together. When LDAP has c
 and then does not answer, a request stops waiting after 30 seconds, but asfquart cannot stop
 the work that it was waiting for: that goes on, in a thread, until LDAP answers, the
 connection fails, or asfpy gives up. The limit on checks counts those as well, so that such
-a server holds at most ten threads and connections, however many requests arrive. While all
-ten are held, HTTP Basic authentication fails for everybody; nothing else in the application
-is affected.
+a server holds at most ten threads and connections, however many requests arrive. A request
+that finds all ten taken waits for one, and that wait is part of its 30 seconds, so more
+than ten requests at one time are served when LDAP answers. While all ten stay held, HTTP
+Basic authentication fails for everybody, for each request after its 30 seconds, and at once
+when a hundred are waiting; nothing else in the application is affected.
 
 **Neither of those covers an LDAP server that does not answer the connection itself.** While
 a connection to such a server is being attempted, the whole application is stopped: no
@@ -151,6 +154,7 @@ this table with the code.
 | `asfquart.ldap.LDAP_TIMEOUT` | `30` |
 | `asfquart.ldap.LDAP_NETWORK_TIMEOUT` | `5` |
 | `asfquart.ldap.MAX_LDAP_OPERATIONS` | `10` |
+| `asfquart.ldap.MAX_LDAP_WAITING` | `100` |
 | `asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL` | `60` |
 | `asfquart.ldap.MAX_FAILED_LOGIN_USERS` | `1000` |
 | `asfquart.ldap.FAILED_LOGIN_LOG_LIMIT` | `60` |
