@@ -524,6 +524,7 @@ def refusing(monkeypatch, directory):
     fake.clock = directory.clock
     monkeypatch.setattr(asfquart.ldap, "asfpy", types.SimpleNamespace(aioldap=fake), raising=False)
     monkeypatch.setattr(asfquart.ldap, "_FAILED_LOGINS", {})
+    monkeypatch.setattr(asfquart.ldap, "_FAILED_LOGIN_LINES", [0.0, 0, 0])
     return fake
 
 
@@ -601,6 +602,109 @@ async def test_failed_basic_login_records_are_bounded(refusing, monkeypatch, cap
     await _refused("aa")  # was dropped, so it is logged again
     assert len(_failure_lines(caplog)) == 6
     assert list(asfquart.ldap._FAILED_LOGINS) == ["ee", "dd", "aa"]
+
+
+@pytest.mark.auth
+async def test_failures_of_a_user_who_is_dropped_are_logged_first(refusing, monkeypatch, caplog):
+    """The failures that were counted for a user are not thrown away with the record"""
+    monkeypatch.setattr(asfquart.ldap, "MAX_FAILED_LOGIN_USERS", 2)
+    for _ in range(3):
+        await _refused("aa")  # one line, and two that are counted
+    await _refused("bb")
+    await _refused("cc")  # no room: aa is dropped
+    assert _failure_lines(caplog) == [
+        "HTTP Basic authentication failed for user aa: Invalid credentials. (0x0031 [49])",
+        "HTTP Basic authentication failed for user bb: Invalid credentials. (0x0031 [49])",
+        "HTTP Basic authentication failed for user aa 2 more times since it was last logged",
+        "HTTP Basic authentication failed for user cc: Invalid credentials. (0x0031 [49])",
+    ]
+    assert list(asfquart.ldap._FAILED_LOGINS) == ["bb", "cc"]
+    # bb has nothing counted, so nothing is written when it is dropped
+    await _refused("dd")
+    assert len(_failure_lines(caplog)) == 5
+
+
+def _users(count, start=0):
+    return [f"user{number}" for number in range(start, start + count)]
+
+
+@pytest.mark.auth
+async def test_failed_basic_logins_for_many_users_do_not_flood_the_log(refusing, caplog):
+    """Guessing at one user id after another is a limited number of lines, and a count"""
+    limit = asfquart.ldap.FAILED_LOGIN_LOG_LIMIT
+    for user in _users(limit + 140):
+        await _refused(user)
+    lines = _failure_lines(caplog)
+    assert len(lines) == limit
+    assert lines[-1].startswith(f"HTTP Basic authentication failed for user user{limit - 1}:")
+    assert len(refusing.binds) == limit + 140  # every one was still checked by LDAP
+    # Nothing more in this interval, whoever it is
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL - 1
+    await _refused("alice")
+    assert len(_failure_lines(caplog)) == limit
+    # In the next interval the count is logged, and lines are written again
+    refusing.clock.now += 1
+    await _refused("bob")
+    assert _failure_lines(caplog)[limit:] == [
+        "HTTP Basic authentication failed 141 more times, which were not logged one by one:"
+        " the limit of 60 lines in 60 seconds had been reached",
+        "HTTP Basic authentication failed for user bob: Invalid credentials. (0x0031 [49])",
+    ]
+    # The count was logged once, and starts again
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    await _refused("carol")
+    assert len(_failure_lines(caplog)) == limit + 3
+
+
+@pytest.mark.auth
+async def test_limit_on_lines_is_for_each_interval(refusing, caplog):
+    limit = asfquart.ldap.FAILED_LOGIN_LOG_LIMIT
+    for user in _users(limit):
+        await _refused(user)
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    for user in _users(limit, start=1000):
+        await _refused(user)
+    lines = _failure_lines(caplog)
+    assert len(lines) == 2 * limit  # the limit was reached twice, and never passed
+    assert not any("one by one" in line for line in lines)
+
+
+@pytest.mark.auth
+async def test_count_of_a_user_goes_into_the_count_for_all_when_the_limit_is_reached(refusing, monkeypatch, caplog):
+    """A failure is counted in one place or another, and in one place only"""
+    monkeypatch.setattr(asfquart.ldap, "FAILED_LOGIN_LOG_LIMIT", 2)
+    for _ in range(4):
+        await _refused("alice")  # one line, and three that are counted for alice
+    await _refused("bob")  # the second line of this interval
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    await _refused("carol")
+    await _refused("dave")  # the second line of the next
+    await _refused("alice")  # alice's line is due, with her count, and there is no room for it
+    assert len(_failure_lines(caplog)) == 4
+    assert asfquart.ldap._FAILED_LOGINS["alice"] == (refusing.clock.now, 0)
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    await _refused("alice")
+    assert _failure_lines(caplog)[4:] == [
+        "HTTP Basic authentication failed 4 more times, which were not logged one by one:"
+        " the limit of 2 lines in 60 seconds had been reached",
+        "HTTP Basic authentication failed for user alice: Invalid credentials. (0x0031 [49])",
+    ]
+
+
+@pytest.mark.auth
+async def test_count_of_a_dropped_user_goes_into_the_count_for_all_when_the_limit_is_reached(
+    refusing, monkeypatch, caplog
+):
+    monkeypatch.setattr(asfquart.ldap, "FAILED_LOGIN_LOG_LIMIT", 2)
+    monkeypatch.setattr(asfquart.ldap, "MAX_FAILED_LOGIN_USERS", 2)
+    for _ in range(3):
+        await _refused("aa")  # one line, and two that are counted
+    await _refused("bb")  # the second line
+    await _refused("cc")  # aa is dropped: neither aa's count nor cc gets a line
+    assert len(_failure_lines(caplog)) == 2
+    refusing.clock.now += asfquart.ldap.FAILED_LOGIN_LOG_INTERVAL
+    await _refused("dd")
+    assert _failure_lines(caplog)[2].startswith("HTTP Basic authentication failed 3 more times,")
 
 
 @pytest.mark.auth

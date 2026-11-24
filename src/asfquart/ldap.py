@@ -44,33 +44,76 @@ LOGGER = logging.getLogger(__name__)
 # is logged at most this often, in seconds, with a count of the failures in between, so that a
 # flood of guesses does not become a flood in the log.
 FAILED_LOGIN_LOG_INTERVAL = 60
-# The users whose failures are being counted. No more than this many are kept; a user who is
-# dropped is logged again at their next failure.
+# For all users together, no more than this many lines about wrong passwords are written in one
+# interval, so that guessing at many user ids in turn does not flood the log either. The failures
+# past that are counted, and one more line gives the count when the next interval begins.
+FAILED_LOGIN_LOG_LIMIT = 60
+# [when this interval began, lines written in it, failures in it that no line was written for]
+_FAILED_LOGIN_LINES: list[float] = [0.0, 0, 0]
+# The users whose failures are being counted. No more than this many are kept. A user who is
+# dropped has the failures that were counted logged first, and is logged again at the next one.
 MAX_FAILED_LOGIN_USERS = 1000
 # user id -> (when a failure was last logged, failures since then that were not logged)
 _FAILED_LOGINS: dict[str, tuple[float, int]] = {}
 
 
+def _failed_login_line(failures: int, message: str, *args: object) -> None:
+    """Writes one line about wrong passwords, which stands for this many failures that have not
+    been logged, unless FAILED_LOGIN_LOG_LIMIT lines were written in this interval already. Then
+    the failures are counted, and the count is logged when the next interval begins."""
+    now = time.time()
+    began, _lines, unlogged = _FAILED_LOGIN_LINES
+    if now - began >= FAILED_LOGIN_LOG_INTERVAL:
+        _FAILED_LOGIN_LINES[:] = [now, 0, 0]
+        if unlogged:
+            LOGGER.warning(
+                "HTTP Basic authentication failed %d more times, which were not logged one by one:"
+                " the limit of %d lines in %d seconds had been reached",
+                unlogged,
+                FAILED_LOGIN_LOG_LIMIT,
+                FAILED_LOGIN_LOG_INTERVAL,
+            )
+    if _FAILED_LOGIN_LINES[1] >= FAILED_LOGIN_LOG_LIMIT:
+        _FAILED_LOGIN_LINES[2] += failures
+        return
+    _FAILED_LOGIN_LINES[1] += 1
+    LOGGER.warning(message, *args)
+
+
 def _log_failed_login(userid: str, error: Exception) -> None:
     """Logs that LDAP refused this user's password. The user id has the form of an ASF user id,
-    having been checked before LDAP was asked, so it is safe in a log. The password is not logged."""
+    having been checked before LDAP was asked, so it is safe in a log. The password is not logged.
+
+    No failure goes uncounted: one that gets no line of its own is in the count of the user's
+    next line, or of the line that is written when the user is dropped, or of the line for all
+    users that is written after the limit on lines was reached."""
     now = time.time()
     logged_at, unlogged = _FAILED_LOGINS.pop(userid, (0.0, 0))
     if now - logged_at < FAILED_LOGIN_LOG_INTERVAL:
         _FAILED_LOGINS[userid] = (logged_at, unlogged + 1)  # back at the end, as the latest to fail
         return
     while len(_FAILED_LOGINS) >= MAX_FAILED_LOGIN_USERS:
-        del _FAILED_LOGINS[next(iter(_FAILED_LOGINS))]  # the one that failed longest ago
+        dropped = next(iter(_FAILED_LOGINS))  # the one that failed longest ago
+        _dropped_at, dropped_unlogged = _FAILED_LOGINS.pop(dropped)
+        if dropped_unlogged:
+            # What LDAP said is not kept, and it was in the line that these are counted from
+            _failed_login_line(
+                dropped_unlogged,
+                "HTTP Basic authentication failed for user %s %d more times since it was last logged",
+                dropped,
+                dropped_unlogged,
+            )
     _FAILED_LOGINS[userid] = (now, 0)
     if unlogged:
-        LOGGER.warning(
+        _failed_login_line(
+            unlogged + 1,
             "HTTP Basic authentication failed for user %s: %s (and %d more times since this was last logged)",
             userid,
             error,
             unlogged,
         )
     else:
-        LOGGER.warning("HTTP Basic authentication failed for user %s: %s", userid, error)
+        _failed_login_line(1, "HTTP Basic authentication failed for user %s: %s", userid, error)
 
 
 def _purge_ldap_cache(max_size: int) -> None:

@@ -144,6 +144,18 @@ HTTP Basic authentication failed for user testuser: Invalid credentials. (0x0031
   line a minute for each user that is being guessed at, not a line for each guess. The count
   appears when that user next fails after the minute is up; if the guessing stops, the last
   count is not logged.
+- For all users together, at most 60 such lines are written in a minute
+  (`asfquart.ldap.FAILED_LOGIN_LOG_LIMIT`), so that guessing at one user id after another
+  does not flood the log either. The failures past that are counted, and when the next minute
+  begins one line gives the count:
+  `HTTP Basic authentication failed 940 more times, which were not logged one by one: the limit of 60 lines in 60 seconds had been reached`.
+  That line too is written at the next failure, whenever that is.
+- Counts are kept for the 1,000 users that failed most recently. When a user is dropped to
+  make room, the failures that were counted are logged first:
+  `HTTP Basic authentication failed for user testuser 250 more times since it was last logged`.
+- A failure is therefore in a line of its own, or in exactly one of these counts. A count is
+  lost only if the application stops, or no password is refused again, before the line with
+  it is written.
 - The line does not have the address of the client. Behind a reverse proxy asfquart sees the
   proxy's address for every request; the proxy's own log has the client's.
 - A request that is refused before LDAP is asked is not logged: a username that does not
