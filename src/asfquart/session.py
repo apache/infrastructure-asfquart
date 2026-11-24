@@ -136,7 +136,7 @@ class SessionProtocol(typing.Protocol):
     def committees(self) -> typing.Collection[str]: ...  # Requirements.pmc_member
 
 
-# These four were camelCase until 0.1.13: new name -> old name. The old names still work, see
+# These four were camelCase until 0.2.0: new name -> old name. The old names still work, see
 # ClientSession and auth.Requirements.
 OLD_NAMES = {"is_member": "isMember", "is_chair": "isChair", "is_root": "isRoot", "is_role": "isRole"}
 

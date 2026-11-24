@@ -231,7 +231,7 @@ app = asfquart.construct("myapp")
 `OAUTH_URL_INIT` takes the state and the callback URL, each as a `%s`. `OAUTH_URL_CALLBACK` is
 just the endpoint - the code is POSTed to it as a form field named `code`.
 
-Before 0.1.13 `OAUTH_URL_CALLBACK` took the code as a `%s`, and a lot of apps set it to the old
+Before 0.2.0 `OAUTH_URL_CALLBACK` took the code as a `%s`, and a lot of apps set it to the old
 default, `"https://oauth.apache.org/token-oidc?code=%s"`. That exact value is treated as the new
 default, so those apps get the `POST` and can drop the line. Any other value with a `%s` is
 still sent as a `GET`, with a warning logged once - remove the query string to switch to

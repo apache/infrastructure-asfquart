@@ -18,7 +18,7 @@ Requirement = typing.Callable[[typing.Any], tuple[bool, str]]
 
 
 def _read(client_session: typing.Any, name: str) -> typing.Any:
-    """Reads an attribute of the session that was camelCase until 0.1.13. A session class that
+    """Reads an attribute of the session that was camelCase until 0.2.0. A session class that
     still has the old name works, with a warning."""
     try:
         return getattr(client_session, name)
