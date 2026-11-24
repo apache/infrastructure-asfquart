@@ -93,6 +93,7 @@ def test_every_validation_constant_is_on_the_page():
                     "DEFAULT_LDAP_CACHE_MAX_ENTRIES",
                     "MAX_FAILED_LOGIN_USERS",
                     "MAX_LDAP_OPERATIONS",
+                    "MAX_LDAP_WAITING",
                 )
                 assert f"{module.__name__}.{attr}" in documented or not_about_input, attr
 
