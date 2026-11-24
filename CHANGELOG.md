@@ -119,7 +119,8 @@ Changes in 0.1.13:
 
  - A password that LDAP refuses for HTTP Basic authentication is logged as a warning, with the
    user id and without the password, at most once a minute for one user and with a count of the
-   failures in between. Until now a wrong password left no trace. The 403 response no longer
+   failures in between, and at most 60 such lines a minute for all users together, with a count
+   of the rest. Until now a wrong password left no trace. The 403 response no longer
    includes the error text from LDAP, which goes to the log instead, and an unexpected LDAP error
    is logged, not printed. See "Failed logins" in `docs/sessions.md`.
 
