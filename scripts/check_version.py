@@ -45,9 +45,23 @@ def _check(label: str, parent: str | None, revision: str) -> list[str]:
 
 def _check_commit(commit: str) -> list[str]:
     if _exists(f"{commit}^2"):
-        return [f"{commit[:12]}: merge commits are not allowed, so rebase instead"]
+        return _check_merge(commit)
     parent = f"{commit}^" if _exists(f"{commit}^") else None
     return _check(commit[:12], parent, commit)
+
+
+def _check_merge(commit: str) -> list[str]:
+    """A merge joins two lines of work and brings no version change of its own:
+    it carries the version of one of its parents."""
+    version = _version(commit)
+    parents = [_version(f"{commit}^1"), _version(f"{commit}^2")]
+    errors = []
+    if version not in parents:
+        errors.append(f"{commit[:12]}: a merge keeps the version of a parent ({' or '.join(parents)}), not {version}")
+    locked = _locked_version(commit)
+    if locked != version:
+        errors.append(f"{commit[:12]}: uv.lock records version {locked}, not {version}")
+    return errors
 
 
 def _check_range(start: str, end: str) -> list[str]:
