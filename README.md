@@ -150,25 +150,12 @@ uv build
 
 ### Keeping your branch up to date
 
-`main` has no merge commits, which are the commits that `git merge` and a plain `git pull` make
-when they join two lines of work. GitHub refuses any push to `main` that contains one, and the
-checks fail on any pull request that contains one.
+If your branch needs to catch up with `main`, use the button on the pull request page that
+updates the branch, or its equivalent in `git`. A pull request checked during a release fails
+the version check until the release has finished, but bringing it up to date with `main`
+afterwards fixes it.
 
-So never merge `main` into your branch. To catch up, move your commits on top of the latest
-`main`, then replace your branch on GitHub:
-
-```shell
-git pull --rebase origin main
-git push --force-with-lease
-```
-
-The button on a pull request page that updates the branch merges by default, so if you use it,
-choose its rebase option instead. If you push to `main` directly, run
-`git config pull.rebase true` once, so that `git pull` never makes a merge commit.
-
-The same two commands fix a pull request whose checks fail with "merge commits are not allowed,
-so rebase instead". They also fix one that was started during a release and fails the version
-check, once the release has finished.
+GitHub refuses a force-push to `main` or to a release tag, and refuses to delete either.
 
 ## Releasing
 
