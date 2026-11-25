@@ -214,6 +214,10 @@ Changes in 0.2.0:
    - New type aliases: `auth.Requirement` and `base.TokenHandler`.
  - Packaging moved from poetry to uv (`uv_build` backend, `uv.lock`); tests run on pytest 9 with
    pytest-asyncio 1.x; Dependabot keeps dependencies and GitHub Actions current.
+ - `app.cfg` is a `Box` (from `python-box`, MIT) instead of an `EasyDict`, which is LGPL-3.0 and
+   so not a dependency an Apache project may have. Attribute and item access, `update()`, `get()`
+   and the conversion of nested dictionaries work as before; a missing attribute raises
+   `BoxKeyError`, which is an `AttributeError` and a `KeyError` (#177).
 
 Changes in 0.1.12:
  - Dependency constraints loosened from exact pins to minimums: `quart>=0.20.0,<1`, `asfpy>=0.56,<1`,

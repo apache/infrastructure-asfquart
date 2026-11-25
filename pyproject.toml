@@ -26,7 +26,7 @@ dependencies = [
     "quart>=0.20.0,<1",
     "ezt>=1.1,<2",
     "asfpy>=0.56,<1",
-    "easydict>=1.13,<2",
+    "python-box>=7.4.1,<8",
     "exceptiongroup>=1.1.0; python_version<'3.11'",
     "watchfiles>=1.0.0,<2",
 ]
