@@ -32,7 +32,7 @@ import sys
 import typing
 
 import asfpy.twatcher
-import easydict
+import box
 import ezt
 import hypercorn.utils
 import quart  # implies .app
@@ -124,8 +124,9 @@ class QuartApp(quart.Quart):
         self.tw = asfpy.twatcher.TemplateWatcher()
         self.add_runner(self.tw.watch_forever, name=f"TW:{app_id}")
 
-        # use an easydict for config values
-        self.cfg = easydict.EasyDict()
+        # The config values, with attribute access: app.cfg.OAUTH as well as
+        # app.cfg["OAUTH"]. A nested dict becomes a Box too.
+        self.cfg = box.Box()
 
         # token handler callback for PATs - see docs/sessions.md
         self.token_handler: TokenHandler | None = None  # Default to no PAT handler available.

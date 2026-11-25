@@ -3,7 +3,7 @@
 
 import os
 
-import easydict
+import box
 import yaml
 
 import asfquart
@@ -13,7 +13,7 @@ ROLE_ACCOUNT_CONFIG = "roleaccounts.yaml"  # See roleaccounts.yaml in this examp
 
 def load_accounts():
     if os.path.isfile(ROLE_ACCOUNT_CONFIG):
-        yml = easydict.EasyDict(yaml.safe_load(open(ROLE_ACCOUNT_CONFIG)))
+        yml = box.Box(yaml.safe_load(open(ROLE_ACCOUNT_CONFIG)))
     else:
         print(f"Could not find role account config file {ROLE_ACCOUNT_CONFIG}, no role accounts set up")
         yml = {}
