@@ -26,7 +26,7 @@ _RULESETS: Final = {
     "Main branch": (
         "branch",
         "refs/heads/main",
-        frozenset({"deletion", "non_fast_forward", "required_linear_history"}),
+        frozenset({"deletion", "non_fast_forward"}),
     ),
     "Release tags": ("tag", "refs/tags/v*", frozenset({"deletion", "update"})),
 }

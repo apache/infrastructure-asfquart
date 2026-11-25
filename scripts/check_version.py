@@ -44,8 +44,6 @@ def _check(label: str, parent: str | None, revision: str) -> list[str]:
 
 
 def _check_commit(commit: str) -> list[str]:
-    if _exists(f"{commit}^2"):
-        return [f"{commit[:12]}: merge commits are not allowed, so rebase instead"]
     parent = f"{commit}^" if _exists(f"{commit}^") else None
     return _check(commit[:12], parent, commit)
 
@@ -53,7 +51,7 @@ def _check_commit(commit: str) -> list[str]:
 def _check_range(start: str, end: str) -> list[str]:
     span = end if (start == _ZERO) else f"{start}..{end}"
     errors = []
-    for commit in _git("rev-list", "--reverse", span).split():
+    for commit in _git("rev-list", "--reverse", "--first-parent", span).split():
         errors.extend(_check_commit(commit))
         for tag in _git("tag", "--points-at", commit, "--list", "v*").split():
             errors.extend(_check_tag(tag, commit))
@@ -68,7 +66,7 @@ def _check_tag(tag: str, commit: str) -> list[str]:
     elif tag != f"v{version}":
         errors.append(f"tag {tag}: commit {commit[:12]} has version {version}, so the tag must be v{version}")
     main = "refs/heads/main" if _exists("refs/heads/main") else "refs/remotes/origin/main"
-    if _git_status("merge-base", "--is-ancestor", commit, main) != 0:
+    if commit not in _git("rev-list", "--first-parent", main).split():
         errors.append(f"tag {tag}: commit {commit[:12]} is not on main")
     return errors
 
@@ -113,7 +111,7 @@ def main() -> None:
     if remote_ref.startswith("refs/tags/v") and end:
         errors = [*_check_commit(end), *_check_tag(remote_ref.removeprefix("refs/tags/"), end)]
     elif remote_ref.startswith("refs/pull/") and end:
-        errors = [*_check_range(start, f"{end}^2"), *_check("pull request merge", f"{end}^1", end)]
+        errors = _check("pull request merge", f"{end}^1", end)
     elif end:
         errors = _check_range(start, end)
     else:

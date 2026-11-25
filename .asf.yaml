@@ -6,7 +6,6 @@ github:
       branches:
         includes:
           - "main"
-      required_linear_history: true
     - name: "Release tags"
       target: tag
       enforcement: active
