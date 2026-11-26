@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10, <4"
 
 [[package]]
@@ -228,21 +228,21 @@ wheels = [
 
 [[package]]
 name = "asfpy"
-version = "0.60"
+version = "0.61"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "cffi" },
     { name = "cryptography" },
-    { name = "easydict" },
     { name = "ezt" },
+    { name = "python-box" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "watchfiles" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/c2/9433a2dc462bbef8f1660a02dfdef0e574410622a59bfe32ca913dc69ed2/asfpy-0.60.tar.gz", hash = "sha256:95bdeb4bcb89078e6a51aef45f3b560c0912a93ecc0ba2610de41694b63c00ad", size = 161056, upload-time = "2026-09-19T10:44:28.587Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/85/3c12948c543caea3b20e07111d06652e36f0aef9005dff8e1796a40ede98/asfpy-0.61.tar.gz", hash = "sha256:9dcd08dbaba0fcadc73a3024153e80acdd66fbb5db8ce0854a8a727a95169f59", size = 180094, upload-time = "2026-11-25T15:39:27.845Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/21/225e1971d481226ee37fb9732078b2a5571133eb03d4193e9b13f3820bdf/asfpy-0.60-py3-none-any.whl", hash = "sha256:120164ddb98dcb12d44dc4383226e5892f3beccce017861468c4da5d8213bba4", size = 39762, upload-time = "2026-09-19T10:44:27.438Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/b1/fc90e63492447165eb45174bba590a54681a86541eb6ab1a47311138d76a/asfpy-0.61-py3-none-any.whl", hash = "sha256:59a45df780ac7fb4159b7ec4f53772fffbf2031dad3361767a6701a82e14e165", size = 42048, upload-time = "2026-11-25T15:39:26.723Z" },
 ]
 
 [[package]]
@@ -280,7 +280,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.2,<4" },
-    { name = "asfpy", specifier = ">=0.56,<1" },
+    { name = "asfpy", specifier = ">=0.61,<1" },
     { name = "bonsai", marker = "extra == 'aioldap'" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.1.0" },
     { name = "ezt", specifier = ">=1.1,<2" },
@@ -726,20 +726,11 @@ wheels = [
 ]
 
 [[package]]
-name = "easydict"
-version = "1.13"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/24/9f/d18d6b5e19244788a6d09c14a8406376b4f4bfcc008e6d17a4f4c15362e8/easydict-1.13.tar.gz", hash = "sha256:b1135dedbc41c8010e2bc1f77ec9744c7faa42bce1a1c87416791449d6c87780", size = 6809, upload-time = "2024-03-04T12:04:41.251Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/ec/fa6963f1198172c2b75c9ab6ecefb3045991f92f75f5eb41b6621b198123/easydict-1.13-py3-none-any.whl", hash = "sha256:6b787daf4dcaf6377b4ad9403a5cee5a86adbc0ca9a5bcf5410e9902002aeac2", size = 6804, upload-time = "2024-03-04T12:04:39.508Z" },
-]
-
-[[package]]
 name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
