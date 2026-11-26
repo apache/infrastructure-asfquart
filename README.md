@@ -164,13 +164,19 @@ release with `.dev0+dev` appended, such as `0.2.0.dev0+dev` before 0.2.0. The `+
 local version, which PyPI will not accept, so a build from source can never be published as a
 release.
 
-Before a release, check that `CHANGELOG.md` has a section for it, such as "Changes in 0.2.0:".
-Then run `sh scripts/phase.sh release` on an up to date `main`. It changes the version from
+Before a release, check that `CHANGELOG.md` has a section for it, such as "Changes in 0.2.0:",
+and that the publish workflow passed on the latest commit to `main`. Then run
+`sh scripts/phase.sh release` on an up to date `main`. It changes the version from
 `0.2.N.dev0+dev` to `0.2.N`, commits, tags that commit `v0.2.N`, and pushes the commit and the
-tag together. The upload to PyPI waits until two members of the `tooling` or `infrastructure`
-LDAP service groups approve it at https://releases.apache.org/gates. Only members of those
-groups can start a release. If anyone else pushes the tag, ATR rejects the run, and a member can
-re-run it.
+tag together.
+
+The tag starts the publish workflow, which builds and tests the package and then waits at the
+release gate of [Apache Trusted Releases](https://releases.apache.org/) (ATR). Two members of
+the `tooling` or `infrastructure` LDAP service groups must approve it at
+https://releases.apache.org/gates before the workflow uploads to PyPI. The person who started
+the release can be one of the two, and a single rejection stops the release. Only members of
+those groups can start a release. If anyone else pushes the tag, ATR rejects the run, and a
+member can re-run it.
 
 Straight afterwards, before anything else is merged, run `sh scripts/phase.sh develop` to change
 the version to `0.2.(N+1).dev0+dev`, commit, and push.
