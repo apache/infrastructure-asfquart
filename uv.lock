@@ -247,7 +247,7 @@ wheels = [
 
 [[package]]
 name = "asfquart"
-version = "0.2.0.dev0+dev"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
